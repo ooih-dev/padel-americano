@@ -90,11 +90,11 @@ function SetupScreen({ onStart, onShowHistory }) {
         <div className="mb-6">
           <p className="text-sm text-gray-400 mb-2 text-center">Points per set</p>
           <div className="flex gap-2 justify-center">
-            {[16, 24, 32].map(s => (
+            {[16, 21, 24, 31, 32].map(s => (
               <button
                 key={s}
                 onClick={() => setMaxScore(s)}
-                className={`px-5 py-2 rounded-xl text-sm font-medium transition-all ${
+                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
                   maxScore === s
                     ? 'bg-green-600 text-white shadow-lg shadow-green-600/30'
                     : 'bg-white/10 text-gray-300 hover:bg-white/15'
