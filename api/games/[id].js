@@ -93,6 +93,32 @@ export default async function handler(req, res) {
       return res.status(200).json({ status: 'finished' })
     }
 
+    if (action === 'edit_round') {
+      const { round_number, sets } = req.body
+      if (!round_number || !sets || !Array.isArray(sets)) {
+        return res.status(400).json({ error: 'round_number and sets required' })
+      }
+
+      const roundRes = await pool.query(
+        'SELECT id FROM padel_rounds WHERE game_id = $1 AND round_number = $2',
+        [gameId, round_number]
+      )
+      if (roundRes.rows.length === 0) {
+        return res.status(404).json({ error: 'Round not found' })
+      }
+      const roundId = roundRes.rows[0].id
+
+      for (const s of sets) {
+        await pool.query(
+          `UPDATE padel_sets SET team1_score = $1, team2_score = $2
+           WHERE round_id = $3 AND set_number = $4`,
+          [s.team1_score, s.team2_score, roundId, s.set_number]
+        )
+      }
+
+      return res.status(200).json({ updated: true })
+    }
+
     return res.status(400).json({ error: 'Unknown action' })
   }
 

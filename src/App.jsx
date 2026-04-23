@@ -440,9 +440,129 @@ function ResultsScreen({ players, scores, roundHistory, onNewGame }) {
   )
 }
 
+function GameDetailScreen({ gameId, onBack }) {
+  const [game, setGame] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [editing, setEditing] = useState(null)
+  const [editScores, setEditScores] = useState({})
+  const [saving, setSaving] = useState(false)
+  const auth = useAuth()
+
+  const loadGame = () => {
+    fetch(`/api/games/${gameId}`)
+      .then(r => r.json())
+      .then(data => { setGame(data); setLoading(false) })
+      .catch(() => setLoading(false))
+  }
+
+  useEffect(() => { loadGame() }, [gameId])
+
+  const startEdit = (roundIdx, round) => {
+    setEditing(roundIdx)
+    const scores = {}
+    round.sets.forEach(s => {
+      scores[s.set_number] = { team1: s.team1_score, team2: s.team2_score }
+    })
+    setEditScores(scores)
+  }
+
+  const handleSave = async (round) => {
+    if (!auth?.initData) return
+    setSaving(true)
+    const sets = round.sets.map(s => ({
+      set_number: s.set_number,
+      team1_score: editScores[s.set_number]?.team1 ?? s.team1_score,
+      team2_score: editScores[s.set_number]?.team2 ?? s.team2_score,
+    }))
+    try {
+      await fetch(`/api/games/${gameId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'x-telegram-init-data': auth.initData },
+        body: JSON.stringify({ action: 'edit_round', round_number: round.round_number, sets }),
+      })
+      setEditing(null)
+      loadGame()
+    } catch {}
+    setSaving(false)
+  }
+
+  if (loading) return <div className="min-h-screen px-4 py-6"><div className="max-w-sm mx-auto"><p className="text-gray-400 text-center py-8">Загрузка...</p></div></div>
+  if (!game) return <div className="min-h-screen px-4 py-6"><div className="max-w-sm mx-auto"><button onClick={onBack} className="text-gray-400 text-sm">← Назад</button><p className="text-gray-400 text-center py-8">Игра не найдена</p></div></div>
+
+  const g = game.game
+  const playerNames = typeof g.player_names === 'string' ? JSON.parse(g.player_names) : g.player_names
+
+  return (
+    <div className="min-h-screen px-4 py-6">
+      <div className="max-w-sm mx-auto">
+        <div className="flex items-center gap-3 mb-4">
+          <button onClick={onBack} className="text-gray-400 hover:text-white text-sm">← Назад</button>
+          <h1 className="text-lg font-bold text-white">Игра</h1>
+        </div>
+
+        <div className="bg-white/5 rounded-2xl p-4 mb-4">
+          <p className="text-sm text-white mb-1">{playerNames.join(', ')}</p>
+          <p className="text-xs text-gray-400">{new Date(g.created_at).toLocaleDateString('ru-RU')} · до {g.max_score} очков</p>
+        </div>
+
+        {game.rounds.map((round, ri) => (
+          <div key={round.id} className="bg-white/5 rounded-2xl p-4 mb-3">
+            <div className="flex justify-between items-center mb-3">
+              <span className="text-xs text-gray-400 uppercase tracking-wider">Раунд {round.round_number}</span>
+              {auth?.initData && editing !== ri && (
+                <button onClick={() => startEdit(ri, round)} className="text-xs text-blue-400 hover:text-blue-300">✏️ Редактировать</button>
+              )}
+              {editing === ri && (
+                <div className="flex gap-2">
+                  <button onClick={() => handleSave(round)} disabled={saving} className="text-xs text-green-400 hover:text-green-300">{saving ? '...' : 'Сохранить'}</button>
+                  <button onClick={() => setEditing(null)} className="text-xs text-gray-400 hover:text-gray-300">Отмена</button>
+                </div>
+              )}
+            </div>
+
+            {round.sets.map(s => {
+              const t1 = typeof s.team1_names === 'string' ? JSON.parse(s.team1_names) : s.team1_names
+              const t2 = typeof s.team2_names === 'string' ? JSON.parse(s.team2_names) : s.team2_names
+              const isEditing = editing === ri
+              return (
+                <div key={s.id} className="flex items-center justify-between gap-2 mb-2">
+                  <div className="flex-1 text-right">
+                    <p className="text-xs text-gray-400 truncate">{t1.join(' & ')}</p>
+                    {isEditing ? (
+                      <input type="number" inputMode="numeric" className="w-12 text-center text-sm font-bold bg-white/10 rounded py-0.5 text-white border border-white/20"
+                        value={editScores[s.set_number]?.team1 ?? s.team1_score}
+                        onChange={e => setEditScores({ ...editScores, [s.set_number]: { ...editScores[s.set_number], team1: parseInt(e.target.value) || 0 } })}
+                      />
+                    ) : (
+                      <span className="text-sm font-bold text-white">{s.team1_score}</span>
+                    )}
+                  </div>
+                  <span className="text-gray-500 text-xs">:</span>
+                  <div className="flex-1 text-left">
+                    <p className="text-xs text-gray-400 truncate">{t2.join(' & ')}</p>
+                    {isEditing ? (
+                      <input type="number" inputMode="numeric" className="w-12 text-center text-sm font-bold bg-white/10 rounded py-0.5 text-white border border-white/20"
+                        value={editScores[s.set_number]?.team2 ?? s.team2_score}
+                        onChange={e => setEditScores({ ...editScores, [s.set_number]: { ...editScores[s.set_number], team2: parseInt(e.target.value) || 0 } })}
+                      />
+                    ) : (
+                      <span className="text-sm font-bold text-white">{s.team2_score}</span>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function HistoryScreen({ onBack }) {
   const [games, setGames] = useState([])
   const [loading, setLoading] = useState(true)
+  const [viewGameId, setViewGameId] = useState(null)
   const auth = useAuth()
 
   useEffect(() => {
@@ -464,6 +584,10 @@ function HistoryScreen({ onBack }) {
     } catch {}
   }
 
+  if (viewGameId) {
+    return <GameDetailScreen gameId={viewGameId} onBack={() => setViewGameId(null)} />
+  }
+
   return (
     <div className="min-h-screen px-4 py-6">
       <div className="max-w-sm mx-auto">
@@ -479,7 +603,7 @@ function HistoryScreen({ onBack }) {
         ) : (
           <div className="space-y-3">
             {games.map(g => (
-              <div key={g.id} className="bg-white/5 rounded-2xl p-4">
+              <div key={g.id} className="bg-white/5 rounded-2xl p-4" onClick={() => (g.round_count || 0) > 0 && setViewGameId(g.id)}>
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-xs text-gray-400">
                     {new Date(g.created_at).toLocaleDateString('ru-RU')}
@@ -487,7 +611,7 @@ function HistoryScreen({ onBack }) {
                   <div className="flex items-center gap-2">
                     {(g.round_count || 0) === 0 && (
                       <button
-                        onClick={() => handleDelete(g.id)}
+                        onClick={e => { e.stopPropagation(); handleDelete(g.id) }}
                         className="text-xs px-2 py-0.5 rounded-full bg-red-900/30 text-red-400 hover:bg-red-900/50 transition-colors"
                       >Удалить</button>
                     )}
@@ -497,7 +621,10 @@ function HistoryScreen({ onBack }) {
                   </div>
                 </div>
                 <p className="text-sm text-white mb-1">{(g.player_names || []).join(', ')}</p>
-                <p className="text-xs text-gray-400">{g.round_count || 0} раунд. · до {g.max_score} очков</p>
+                <div className="flex justify-between items-center">
+                  <p className="text-xs text-gray-400">{g.round_count || 0} раунд. · до {g.max_score} очков</p>
+                  {(g.round_count || 0) > 0 && <span className="text-xs text-blue-400">Подробнее →</span>}
+                </div>
                 {g.scores && g.scores.length > 0 && (
                   <div className="mt-2 space-y-1">
                     {g.scores.map((s, i) => (
