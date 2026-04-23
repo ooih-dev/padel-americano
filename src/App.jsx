@@ -1,5 +1,11 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, createContext, useContext } from 'react'
 import './index.css'
+
+const AuthContext = createContext(null)
+
+function useAuth() {
+  return useContext(AuthContext)
+}
 
 function shuffle(arr) {
   const a = [...arr]
@@ -19,9 +25,27 @@ function generateSets(players) {
   ]
 }
 
-function SetupScreen({ onStart }) {
-  const [names, setNames] = useState(['', '', '', ''])
-  const [maxScore, setMaxScore] = useState(16)
+function calcDiff(playerName, roundHistory) {
+  let diff = 0
+  for (const round of roundHistory) {
+    for (const set of round.sets) {
+      if (set.team1.includes(playerName)) {
+        diff += (set.scores?.team1 || 0) - (set.scores?.team2 || 0)
+      } else if (set.team2.includes(playerName)) {
+        diff += (set.scores?.team2 || 0) - (set.scores?.team1 || 0)
+      }
+    }
+  }
+  return diff
+}
+
+function SetupScreen({ onStart, onShowHistory }) {
+  const [names, setNames] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('padel_names')) || ['', '', '', ''] }
+    catch { return ['', '', '', ''] }
+  })
+  const [maxScore, setMaxScore] = useState(24)
+  const auth = useAuth()
 
   const updateName = (i, val) => {
     const n = [...names]
@@ -31,6 +55,13 @@ function SetupScreen({ onStart }) {
 
   const canStart = names.every(n => n.trim().length > 0)
 
+  const handleStart = () => {
+    if (!canStart) return
+    const trimmed = names.map(n => n.trim())
+    localStorage.setItem('padel_names', JSON.stringify(trimmed))
+    onStart(trimmed, maxScore)
+  }
+
   return (
     <div className="flex flex-col items-center justify-center min-h-screen px-4 py-8">
       <div className="w-full max-w-sm">
@@ -38,6 +69,9 @@ function SetupScreen({ onStart }) {
           <div className="text-5xl mb-3">🎾</div>
           <h1 className="text-2xl font-bold text-white mb-1">Padel Americano</h1>
           <p className="text-sm text-gray-400">Score Tracker</p>
+          {auth?.player && (
+            <p className="text-xs text-green-400 mt-1">👤 {auth.player.name}</p>
+          )}
         </div>
 
         <div className="space-y-3 mb-6">
@@ -56,7 +90,7 @@ function SetupScreen({ onStart }) {
         <div className="mb-6">
           <p className="text-sm text-gray-400 mb-2 text-center">Points per set</p>
           <div className="flex gap-2 justify-center">
-            {[16, 21, 32].map(s => (
+            {[16, 24, 32].map(s => (
               <button
                 key={s}
                 onClick={() => setMaxScore(s)}
@@ -73,7 +107,7 @@ function SetupScreen({ onStart }) {
         </div>
 
         <button
-          onClick={() => canStart && onStart(names.map(n => n.trim()), maxScore)}
+          onClick={handleStart}
           disabled={!canStart}
           className={`w-full py-3.5 rounded-xl text-base font-semibold transition-all ${
             canStart
@@ -83,17 +117,27 @@ function SetupScreen({ onStart }) {
         >
           Start Game
         </button>
+
+        {auth?.player && (
+          <button
+            onClick={onShowHistory}
+            className="w-full mt-3 py-3 rounded-xl bg-white/5 text-gray-300 text-sm font-medium hover:bg-white/10 transition-all"
+          >
+            📋 My Games
+          </button>
+        )}
       </div>
     </div>
   )
 }
 
-function GameScreen({ players, maxScore, scores, onFinish, roundNum, onNewRound }) {
+function GameScreen({ players, maxScore, scores, onFinish, roundNum, onNewRound, roundHistory }) {
   const [sets, setSets] = useState(() => generateSets(players))
   const [setScores, setSetScores] = useState([null, null, null])
   const [currentSet, setCurrentSet] = useState(0)
   const [localScores, setLocalScores] = useState({ ...scores })
   const [completedSets, setCompletedSets] = useState([])
+  const [localRoundHistory, setLocalRoundHistory] = useState(roundHistory)
 
   const handleScore = (setIdx, team1Score) => {
     const score = Math.min(Math.max(0, team1Score), maxScore)
@@ -111,19 +155,34 @@ function GameScreen({ players, maxScore, scores, onFinish, roundNum, onNewRound 
     set.team1.forEach(p => { newScores[p] = (newScores[p] || 0) + s.team1 })
     set.team2.forEach(p => { newScores[p] = (newScores[p] || 0) + s.team2 })
     setLocalScores(newScores)
-    setCompletedSets([...completedSets, setIdx])
+
+    const newCompleted = [...completedSets, setIdx]
+    setCompletedSets(newCompleted)
+
+    const updatedHistory = [...localRoundHistory]
+    if (!updatedHistory[roundNum - 1]) {
+      updatedHistory[roundNum - 1] = { sets: sets.map((st, i) => ({ team1: st.team1, team2: st.team2, scores: null })) }
+    }
+    updatedHistory[roundNum - 1].sets[setIdx].scores = { team1: s.team1, team2: s.team2 }
+    setLocalRoundHistory(updatedHistory)
+
     if (setIdx < 2) setCurrentSet(setIdx + 1)
   }
 
   const allDone = completedSets.length === 3
 
   const leaderboard = players
-    .map(p => ({ name: p, score: localScores[p] || 0 }))
-    .sort((a, b) => b.score - a.score)
+    .map(p => ({
+      name: p,
+      score: localScores[p] || 0,
+      diff: calcDiff(p, localRoundHistory.filter(Boolean)),
+    }))
+    .sort((a, b) => b.score - a.score || b.diff - a.diff)
 
   const startNewRound = () => {
-    onNewRound(localScores)
-    setSets(generateSets(players))
+    onNewRound(localScores, localRoundHistory)
+    const newSets = generateSets(players)
+    setSets(newSets)
     setSetScores([null, null, null])
     setCurrentSet(0)
     setCompletedSets([])
@@ -134,7 +193,9 @@ function GameScreen({ players, maxScore, scores, onFinish, roundNum, onNewRound 
       <div className="max-w-sm mx-auto">
         <div className="flex items-center justify-between mb-5">
           <h1 className="text-lg font-bold text-white">Round {roundNum}</h1>
-          <span className="text-xs text-gray-400">to {maxScore} pts</span>
+          <span className="text-xs text-gray-400">
+            Set {Math.min(completedSets.length + 1, 3)}/3 · to {maxScore} pts
+          </span>
         </div>
 
         <div className="bg-white/5 rounded-2xl p-4 mb-5">
@@ -153,7 +214,12 @@ function GameScreen({ players, maxScore, scores, onFinish, roundNum, onNewRound 
                   </span>
                   <span className="text-sm text-white">{p.name}</span>
                 </div>
-                <span className="text-sm font-mono font-bold text-green-400">{p.score}</span>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs font-mono ${p.diff >= 0 ? 'text-green-500' : 'text-red-400'}`}>
+                    {p.diff >= 0 ? '+' : ''}{p.diff}
+                  </span>
+                  <span className="text-sm font-mono font-bold text-green-400 w-8 text-right">{p.score}</span>
+                </div>
               </div>
             ))}
           </div>
@@ -238,7 +304,7 @@ function GameScreen({ players, maxScore, scores, onFinish, roundNum, onNewRound 
               Next Round →
             </button>
             <button
-              onClick={() => onFinish(localScores)}
+              onClick={() => onFinish(localScores, localRoundHistory)}
               className="w-full py-3 rounded-xl bg-green-600 text-white text-sm font-semibold shadow-lg shadow-green-600/30 active:scale-[0.98] transition-all"
             >
               Finish Game
@@ -250,10 +316,16 @@ function GameScreen({ players, maxScore, scores, onFinish, roundNum, onNewRound 
   )
 }
 
-function ResultsScreen({ players, scores, onNewGame }) {
+function ResultsScreen({ players, scores, roundHistory, onNewGame }) {
+  const [shared, setShared] = useState(false)
+
   const leaderboard = players
-    .map(p => ({ name: p, score: scores[p] || 0 }))
-    .sort((a, b) => b.score - a.score)
+    .map(p => ({
+      name: p,
+      score: scores[p] || 0,
+      diff: calcDiff(p, roundHistory.filter(Boolean)),
+    }))
+    .sort((a, b) => b.score - a.score || b.diff - a.diff)
 
   const medals = ['🥇', '🥈', '🥉', '']
   const colors = [
@@ -263,15 +335,32 @@ function ResultsScreen({ players, scores, onNewGame }) {
     'from-white/5 to-white/0 border-white/10',
   ]
 
+  const shareText = `🎾 Padel Americano Results\n${leaderboard.map((p, i) =>
+    `${medals[Math.min(i, 3)]} ${p.name} — ${p.score} pts (${p.diff >= 0 ? '+' : ''}${p.diff})`
+  ).join('\n')}`
+
+  const handleShare = async () => {
+    try {
+      if (navigator.share) {
+        await navigator.share({ text: shareText })
+      } else {
+        await navigator.clipboard.writeText(shareText)
+        setShared(true)
+        setTimeout(() => setShared(false), 2000)
+      }
+    } catch {}
+  }
+
   return (
     <div className="flex flex-col items-center justify-center min-h-screen px-4 py-8">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <div className="text-5xl mb-3">🏆</div>
           <h1 className="text-2xl font-bold text-white mb-1">Final Results</h1>
+          <p className="text-xs text-gray-400">{roundHistory.filter(Boolean).length} round(s) played</p>
         </div>
 
-        <div className="space-y-3 mb-8">
+        <div className="space-y-3 mb-6">
           {leaderboard.map((p, i) => (
             <div
               key={p.name}
@@ -281,7 +370,9 @@ function ResultsScreen({ players, scores, onNewGame }) {
                 <span className="text-2xl w-8">{medals[Math.min(i, 3)]}</span>
                 <div className="text-left">
                   <p className="text-white font-semibold">{p.name}</p>
-                  <p className="text-xs text-gray-400">#{i + 1}</p>
+                  <p className="text-xs text-gray-400">
+                    diff: {p.diff >= 0 ? '+' : ''}{p.diff}
+                  </p>
                 </div>
               </div>
               <span className="text-2xl font-mono font-bold text-green-400">{p.score}</span>
@@ -289,12 +380,86 @@ function ResultsScreen({ players, scores, onNewGame }) {
           ))}
         </div>
 
-        <button
-          onClick={onNewGame}
-          className="w-full py-3.5 rounded-xl bg-green-600 text-white text-base font-semibold shadow-lg shadow-green-600/30 active:scale-[0.98] transition-all"
-        >
-          New Game
-        </button>
+        <div className="space-y-3">
+          <button
+            onClick={handleShare}
+            className="w-full py-3 rounded-xl bg-white/10 text-white text-sm font-semibold hover:bg-white/15 transition-all"
+          >
+            {shared ? '✓ Copied!' : '📤 Share Results'}
+          </button>
+          <button
+            onClick={onNewGame}
+            className="w-full py-3.5 rounded-xl bg-green-600 text-white text-base font-semibold shadow-lg shadow-green-600/30 active:scale-[0.98] transition-all"
+          >
+            New Game
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function HistoryScreen({ onBack }) {
+  const [games, setGames] = useState([])
+  const [loading, setLoading] = useState(true)
+  const auth = useAuth()
+
+  useEffect(() => {
+    if (!auth?.initData) return
+    fetch('/api/games', {
+      headers: { 'x-telegram-init-data': auth.initData }
+    })
+      .then(r => r.json())
+      .then(data => { setGames(data.games || []); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [auth])
+
+  return (
+    <div className="min-h-screen px-4 py-6">
+      <div className="max-w-sm mx-auto">
+        <div className="flex items-center gap-3 mb-6">
+          <button onClick={onBack} className="text-gray-400 hover:text-white text-sm">← Back</button>
+          <h1 className="text-lg font-bold text-white">My Games</h1>
+        </div>
+
+        {loading ? (
+          <p className="text-gray-400 text-center py-8">Loading...</p>
+        ) : games.length === 0 ? (
+          <p className="text-gray-400 text-center py-8">No games yet</p>
+        ) : (
+          <div className="space-y-3">
+            {games.map(g => (
+              <div key={g.id} className="bg-white/5 rounded-2xl p-4">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-xs text-gray-400">
+                    {new Date(g.created_at).toLocaleDateString()}
+                  </span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${
+                    g.status === 'finished' ? 'bg-green-900/30 text-green-400' : 'bg-yellow-900/30 text-yellow-400'
+                  }`}>
+                    {g.status === 'finished' ? 'Done' : 'Active'}
+                  </span>
+                </div>
+                <p className="text-sm text-white mb-1">
+                  {(g.player_names || []).join(', ')}
+                </p>
+                <p className="text-xs text-gray-400">
+                  {g.round_count || 0} rounds · to {g.max_score} pts
+                </p>
+                {g.scores && g.scores.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {g.scores.map((s, i) => (
+                      <div key={i} className="flex justify-between text-xs">
+                        <span className="text-gray-300">{s.name}</span>
+                        <span className="text-green-400 font-mono">{s.total_score}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -303,9 +468,11 @@ function ResultsScreen({ players, scores, onNewGame }) {
 function App() {
   const [screen, setScreen] = useState('setup')
   const [players, setPlayers] = useState([])
-  const [maxScore, setMaxScore] = useState(16)
+  const [maxScore, setMaxScore] = useState(24)
   const [scores, setScores] = useState({})
   const [roundNum, setRoundNum] = useState(1)
+  const [roundHistory, setRoundHistory] = useState([])
+  const [auth, setAuth] = useState({ player: null, initData: null })
 
   useEffect(() => {
     try {
@@ -317,6 +484,21 @@ function App() {
         document.documentElement.style.setProperty('--tg-theme-text-color', tg.themeParams.text_color || '#e0e0e0')
         document.body.style.background = tg.themeParams.bg_color || '#1a1a2e'
         document.body.style.color = tg.themeParams.text_color || '#e0e0e0'
+
+        if (tg.initData) {
+          fetch('/api/auth', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ initData: tg.initData }),
+          })
+            .then(r => r.json())
+            .then(data => {
+              if (data.player) {
+                setAuth({ player: data.player, initData: tg.initData })
+              }
+            })
+            .catch(() => {})
+        }
       }
     } catch {}
   }, [])
@@ -326,16 +508,30 @@ function App() {
     setMaxScore(max)
     setScores(Object.fromEntries(names.map(n => [n, 0])))
     setRoundNum(1)
+    setRoundHistory([])
     setScreen('game')
-  }, [])
 
-  const handleNewRound = useCallback((currentScores) => {
+    if (auth.initData) {
+      fetch('/api/games', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-telegram-init-data': auth.initData,
+        },
+        body: JSON.stringify({ max_score: max, player_names: names }),
+      }).catch(() => {})
+    }
+  }, [auth])
+
+  const handleNewRound = useCallback((currentScores, history) => {
     setScores(currentScores)
+    setRoundHistory(history)
     setRoundNum(r => r + 1)
   }, [])
 
-  const handleFinish = useCallback((finalScores) => {
+  const handleFinish = useCallback((finalScores, history) => {
     setScores(finalScores)
+    setRoundHistory(history)
     setScreen('results')
   }, [])
 
@@ -344,31 +540,37 @@ function App() {
     setPlayers([])
     setScores({})
     setRoundNum(1)
+    setRoundHistory([])
   }, [])
 
-  if (screen === 'setup') {
-    return <SetupScreen onStart={handleStart} />
-  }
-
-  if (screen === 'game') {
-    return (
-      <GameScreen
-        players={players}
-        maxScore={maxScore}
-        scores={scores}
-        onFinish={handleFinish}
-        roundNum={roundNum}
-        onNewRound={handleNewRound}
-      />
-    )
-  }
-
   return (
-    <ResultsScreen
-      players={players}
-      scores={scores}
-      onNewGame={handleNewGame}
-    />
+    <AuthContext.Provider value={auth}>
+      {screen === 'setup' && (
+        <SetupScreen onStart={handleStart} onShowHistory={() => setScreen('history')} />
+      )}
+      {screen === 'game' && (
+        <GameScreen
+          players={players}
+          maxScore={maxScore}
+          scores={scores}
+          onFinish={handleFinish}
+          roundNum={roundNum}
+          onNewRound={handleNewRound}
+          roundHistory={roundHistory}
+        />
+      )}
+      {screen === 'results' && (
+        <ResultsScreen
+          players={players}
+          scores={scores}
+          roundHistory={roundHistory}
+          onNewGame={handleNewGame}
+        />
+      )}
+      {screen === 'history' && (
+        <HistoryScreen onBack={() => setScreen('setup')} />
+      )}
+    </AuthContext.Provider>
   )
 }
 

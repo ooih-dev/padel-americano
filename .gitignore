@@ -23,3 +23,9 @@ dist-ssr
 *.sln
 *.sw?
 .vercel
+
+PLAN.md
+_PROMPT.md
+_run.sh
+code-*.log
+.env
