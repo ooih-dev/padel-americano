@@ -640,6 +640,7 @@ function App() {
   const [roundNum, setRoundNum] = useState(1)
   const [roundHistory, setRoundHistory] = useState([])
   const [auth, setAuth] = useState({ player: null, initData: null })
+  const [gameId, setGameId] = useState(null)
 
   useEffect(() => {
     try {
@@ -668,12 +669,29 @@ function App() {
     } catch {}
   }, [])
 
+  const saveRound = useCallback((gid, roundNumber, roundData) => {
+    if (!auth.initData || !gid) return
+    const sets = roundData.sets.map((s, i) => ({
+      set_number: i + 1,
+      team1_names: s.team1,
+      team2_names: s.team2,
+      team1_score: s.scores?.team1 || 0,
+      team2_score: s.scores?.team2 || 0,
+    }))
+    fetch(`/api/games/${gid}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'x-telegram-init-data': auth.initData },
+      body: JSON.stringify({ action: 'add_round', round_number: roundNumber, sets }),
+    }).catch(() => {})
+  }, [auth])
+
   const handleStart = useCallback((names, max) => {
     setPlayers(names)
     setMaxScore(max)
     setScores(Object.fromEntries(names.map(n => [n, 0])))
     setRoundNum(1)
     setRoundHistory([])
+    setGameId(null)
     setScreen('game')
 
     if (auth.initData) {
@@ -681,21 +699,38 @@ function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-telegram-init-data': auth.initData },
         body: JSON.stringify({ max_score: max, player_names: names }),
-      }).catch(() => {})
+      })
+        .then(r => r.json())
+        .then(data => { if (data.game?.id) setGameId(data.game.id) })
+        .catch(() => {})
     }
   }, [auth])
 
   const handleNewRound = useCallback((currentScores, history) => {
     setScores(currentScores)
     setRoundHistory(history)
+    const completedRound = history[history.length - 1]
+    if (completedRound) saveRound(gameId, history.length, completedRound)
     setRoundNum(r => r + 1)
-  }, [])
+  }, [gameId, saveRound])
 
   const handleFinish = useCallback((finalScores, history) => {
     setScores(finalScores)
     setRoundHistory(history)
+    const lastRound = history[history.length - 1]
+    const lastSaved = history.length
+    if (lastRound && lastRound.sets.some(s => s.scores)) {
+      saveRound(gameId, lastSaved, lastRound)
+    }
+    if (auth.initData && gameId) {
+      fetch(`/api/games/${gameId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'x-telegram-init-data': auth.initData },
+        body: JSON.stringify({ action: 'finish', final_scores: finalScores }),
+      }).catch(() => {})
+    }
     setScreen('results')
-  }, [])
+  }, [gameId, auth, saveRound])
 
   const handleNewGame = useCallback(() => {
     setScreen('setup')
@@ -703,6 +738,7 @@ function App() {
     setScores({})
     setRoundNum(1)
     setRoundHistory([])
+    setGameId(null)
   }, [])
 
   return (
