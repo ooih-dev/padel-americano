@@ -126,13 +126,14 @@ export default async function handler(req, res) {
     const tgUser = getPlayer(req)
     if (!tgUser) return res.status(401).json({ error: 'Auth required' })
 
-    const roundCount = await pool.query(
-      'SELECT COUNT(*) as cnt FROM padel_rounds WHERE game_id = $1', [gameId]
+    const rounds = await pool.query(
+      'SELECT id FROM padel_rounds WHERE game_id = $1', [gameId]
     )
-    if (parseInt(roundCount.rows[0].cnt) > 0) {
-      return res.status(400).json({ error: 'Cannot delete game with completed rounds' })
+    const roundIds = rounds.rows.map(r => r.id)
+    if (roundIds.length > 0) {
+      await pool.query('DELETE FROM padel_sets WHERE round_id = ANY($1)', [roundIds])
     }
-
+    await pool.query('DELETE FROM padel_rounds WHERE game_id = $1', [gameId])
     await pool.query('DELETE FROM padel_game_players WHERE game_id = $1', [gameId])
     await pool.query('DELETE FROM padel_games WHERE id = $1', [gameId])
 

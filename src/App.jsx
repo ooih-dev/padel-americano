@@ -613,6 +613,46 @@ function GameDetailScreen({ gameId, onBack }) {
           <p className="text-xs text-gray-400">{new Date(g.created_at).toLocaleDateString('ru-RU')} · до {g.max_score} очков</p>
         </div>
 
+        {game.rounds.length > 0 && (() => {
+          const stats = {}
+          playerNames.forEach(name => { stats[name] = { scored: 0, conceded: 0, points: 0 } })
+          for (const round of game.rounds) {
+            for (const s of round.sets) {
+              const t1 = typeof s.team1_names === 'string' ? JSON.parse(s.team1_names) : s.team1_names
+              const t2 = typeof s.team2_names === 'string' ? JSON.parse(s.team2_names) : s.team2_names
+              const s1 = s.team1_score || 0, s2 = s.team2_score || 0
+              t1.forEach(name => { if (stats[name]) { stats[name].scored += s1; stats[name].conceded += s2 } })
+              t2.forEach(name => { if (stats[name]) { stats[name].scored += s2; stats[name].conceded += s1 } })
+            }
+          }
+          if (game.scores) {
+            game.scores.forEach(s => { if (stats[s.name]) stats[s.name].points = s.total_score })
+          }
+          const sorted = Object.entries(stats)
+            .map(([name, s]) => ({ name, ...s, diff: s.scored - s.conceded }))
+            .sort((a, b) => b.points - a.points || b.diff - a.diff)
+          return (
+            <div className="bg-white/5 rounded-2xl p-4 mb-4">
+              <p className="text-xs text-gray-400 uppercase tracking-wider mb-3">Итоги</p>
+              {sorted.map((p, i) => (
+                <div key={p.name} className={`flex items-center justify-between py-1.5 ${i === 0 ? 'text-yellow-400' : 'text-gray-300'}`}>
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <span className="text-xs w-5 text-center font-mono">{i === 0 ? '🏆' : `${i + 1}`}</span>
+                    <span className="text-sm truncate">{p.name}</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs font-mono shrink-0">
+                    <span title="Забитые">{p.scored}</span>
+                    <span className="text-gray-500">-</span>
+                    <span title="Пропущенные">{p.conceded}</span>
+                    <span className={`w-8 text-right ${p.diff > 0 ? 'text-green-400' : p.diff < 0 ? 'text-red-400' : 'text-gray-400'}`}>{p.diff > 0 ? `+${p.diff}` : p.diff}</span>
+                    <span className="w-8 text-right font-bold">{p.points}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+        })()}
+
         {game.rounds.map((round, ri) => (
           <div key={round.id} className="bg-white/5 rounded-2xl p-4 mb-3">
             <div className="flex justify-between items-center mb-3">
@@ -635,7 +675,9 @@ function GameDetailScreen({ gameId, onBack }) {
               return (
                 <div key={s.id} className="flex items-center justify-between gap-2 mb-2">
                   <div className="flex-1 text-right">
-                    <p className="text-xs text-gray-400 truncate">{t1.join(' & ')}</p>
+                    <div className="text-xs text-gray-400">
+                      {t1.map((name, i) => <div key={i} className="truncate">{name}</div>)}
+                    </div>
                     {isEditing ? (
                       <input type="number" inputMode="numeric" className="w-12 text-center text-sm font-bold bg-white/10 rounded py-0.5 text-white border border-white/20"
                         value={editScores[s.set_number]?.team1 ?? s.team1_score}
@@ -647,7 +689,9 @@ function GameDetailScreen({ gameId, onBack }) {
                   </div>
                   <span className="text-gray-500 text-xs">:</span>
                   <div className="flex-1 text-left">
-                    <p className="text-xs text-gray-400 truncate">{t2.join(' & ')}</p>
+                    <div className="text-xs text-gray-400">
+                      {t2.map((name, i) => <div key={i} className="truncate">{name}</div>)}
+                    </div>
                     {isEditing ? (
                       <input type="number" inputMode="numeric" className="w-12 text-center text-sm font-bold bg-white/10 rounded py-0.5 text-white border border-white/20"
                         value={editScores[s.set_number]?.team2 ?? s.team2_score}
@@ -671,6 +715,8 @@ function HistoryScreen({ onBack }) {
   const [games, setGames] = useState([])
   const [loading, setLoading] = useState(true)
   const [viewGameId, setViewGameId] = useState(null)
+  const [deleteId, setDeleteId] = useState(null)
+  const [deleting, setDeleting] = useState(false)
   const auth = useAuth()
 
   useEffect(() => {
@@ -681,15 +727,18 @@ function HistoryScreen({ onBack }) {
       .catch(() => setLoading(false))
   }, [auth])
 
-  const handleDelete = async (gameId) => {
-    if (!confirm('Удалить эту игру?')) return
+  const handleDelete = async () => {
+    if (!deleteId) return
+    setDeleting(true)
     try {
-      const r = await fetch(`/api/games/${gameId}`, {
+      const r = await fetch(`/api/games/${deleteId}`, {
         method: 'DELETE',
         headers: { 'x-telegram-init-data': auth.initData },
       })
-      if (r.ok) setGames(games.filter(g => g.id !== gameId))
+      if (r.ok) setGames(games.filter(g => g.id !== deleteId))
     } catch {}
+    setDeleting(false)
+    setDeleteId(null)
   }
 
   if (viewGameId) {
@@ -717,12 +766,10 @@ function HistoryScreen({ onBack }) {
                     {new Date(g.created_at).toLocaleDateString('ru-RU')}
                   </span>
                   <div className="flex items-center gap-2">
-                    {(g.round_count || 0) === 0 && (
-                      <button
-                        onClick={e => { e.stopPropagation(); handleDelete(g.id) }}
-                        className="text-xs px-2 py-0.5 rounded-full bg-red-900/30 text-red-400 hover:bg-red-900/50 transition-colors"
-                      >Удалить</button>
-                    )}
+                    <button
+                      onClick={e => { e.stopPropagation(); setDeleteId(g.id) }}
+                      className="text-xs px-2 py-0.5 rounded-full bg-red-900/30 text-red-400 hover:bg-red-900/50 transition-colors"
+                    >Удалить</button>
                     <span className={`text-xs px-2 py-0.5 rounded-full ${
                       g.status === 'finished' ? 'bg-green-900/30 text-green-400' : 'bg-yellow-900/30 text-yellow-400'
                     }`}>{g.status === 'finished' ? 'Завершена' : 'Активна'}</span>
@@ -745,6 +792,26 @@ function HistoryScreen({ onBack }) {
                 )}
               </div>
             ))}
+          </div>
+        )}
+
+        {deleteId && (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 px-4" onClick={() => setDeleteId(null)}>
+            <div className="bg-[#1e1e2f] rounded-2xl p-6 max-w-xs w-full shadow-xl" onClick={e => e.stopPropagation()}>
+              <p className="text-white text-base font-semibold text-center mb-4">Удалить игру?</p>
+              <p className="text-gray-400 text-sm text-center mb-6">Это действие нельзя отменить</p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setDeleteId(null)}
+                  className="flex-1 py-2.5 rounded-xl bg-white/10 text-gray-300 text-sm font-medium hover:bg-white/15 transition-colors"
+                >Отмена</button>
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="flex-1 py-2.5 rounded-xl bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50"
+                >{deleting ? '...' : 'Да, удалить'}</button>
+              </div>
+            </div>
           </div>
         )}
       </div>
