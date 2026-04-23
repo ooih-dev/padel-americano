@@ -672,35 +672,36 @@ function GameDetailScreen({ gameId, onBack }) {
               const t1 = typeof s.team1_names === 'string' ? JSON.parse(s.team1_names) : s.team1_names
               const t2 = typeof s.team2_names === 'string' ? JSON.parse(s.team2_names) : s.team2_names
               const isEditing = editing === ri
+              const rows = Math.max(t1.length, t2.length)
               return (
-                <div key={s.id} className="flex items-center justify-between gap-2 mb-2">
-                  <div className="flex-1 text-right">
-                    <div className="text-xs text-gray-400">
-                      {t1.map((name, i) => <div key={i} className="truncate">{name}</div>)}
+                <div key={s.id} className="mb-2">
+                  {Array.from({ length: rows }).map((_, row) => (
+                    <div key={row} className="flex items-center gap-1">
+                      <span className="flex-1 text-right text-xs text-gray-400 truncate">{t1[row] || ''}</span>
+                      {row === 0 ? (
+                        <div className="w-16 text-center shrink-0">
+                          {isEditing ? (
+                            <div className="flex items-center justify-center gap-0.5">
+                              <input type="number" inputMode="numeric" className="w-7 text-center text-xs font-bold bg-white/10 rounded py-0.5 text-white border border-white/20"
+                                value={editScores[s.set_number]?.team1 ?? s.team1_score}
+                                onChange={e => setEditScores({ ...editScores, [s.set_number]: { ...editScores[s.set_number], team1: parseInt(e.target.value) || 0 } })}
+                              />
+                              <span className="text-gray-500 text-xs">:</span>
+                              <input type="number" inputMode="numeric" className="w-7 text-center text-xs font-bold bg-white/10 rounded py-0.5 text-white border border-white/20"
+                                value={editScores[s.set_number]?.team2 ?? s.team2_score}
+                                onChange={e => setEditScores({ ...editScores, [s.set_number]: { ...editScores[s.set_number], team2: parseInt(e.target.value) || 0 } })}
+                              />
+                            </div>
+                          ) : (
+                            <span className="text-sm font-bold text-white">{s.team1_score} <span className="text-gray-500">:</span> {s.team2_score}</span>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="w-16 shrink-0" />
+                      )}
+                      <span className="flex-1 text-left text-xs text-gray-400 truncate">{t2[row] || ''}</span>
                     </div>
-                    {isEditing ? (
-                      <input type="number" inputMode="numeric" className="w-12 text-center text-sm font-bold bg-white/10 rounded py-0.5 text-white border border-white/20"
-                        value={editScores[s.set_number]?.team1 ?? s.team1_score}
-                        onChange={e => setEditScores({ ...editScores, [s.set_number]: { ...editScores[s.set_number], team1: parseInt(e.target.value) || 0 } })}
-                      />
-                    ) : (
-                      <span className="text-sm font-bold text-white">{s.team1_score}</span>
-                    )}
-                  </div>
-                  <span className="text-gray-500 text-xs">:</span>
-                  <div className="flex-1 text-left">
-                    <div className="text-xs text-gray-400">
-                      {t2.map((name, i) => <div key={i} className="truncate">{name}</div>)}
-                    </div>
-                    {isEditing ? (
-                      <input type="number" inputMode="numeric" className="w-12 text-center text-sm font-bold bg-white/10 rounded py-0.5 text-white border border-white/20"
-                        value={editScores[s.set_number]?.team2 ?? s.team2_score}
-                        onChange={e => setEditScores({ ...editScores, [s.set_number]: { ...editScores[s.set_number], team2: parseInt(e.target.value) || 0 } })}
-                      />
-                    ) : (
-                      <span className="text-sm font-bold text-white">{s.team2_score}</span>
-                    )}
-                  </div>
+                  ))}
                 </div>
               )
             })}
