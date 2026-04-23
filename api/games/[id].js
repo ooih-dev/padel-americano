@@ -96,5 +96,22 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Unknown action' })
   }
 
+  if (req.method === 'DELETE') {
+    const tgUser = getPlayer(req)
+    if (!tgUser) return res.status(401).json({ error: 'Auth required' })
+
+    const roundCount = await pool.query(
+      'SELECT COUNT(*) as cnt FROM padel_rounds WHERE game_id = $1', [gameId]
+    )
+    if (parseInt(roundCount.rows[0].cnt) > 0) {
+      return res.status(400).json({ error: 'Cannot delete game with completed rounds' })
+    }
+
+    await pool.query('DELETE FROM padel_game_players WHERE game_id = $1', [gameId])
+    await pool.query('DELETE FROM padel_games WHERE id = $1', [gameId])
+
+    return res.status(200).json({ deleted: true })
+  }
+
   return res.status(405).json({ error: 'Method not allowed' })
 }

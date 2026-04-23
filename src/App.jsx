@@ -434,6 +434,17 @@ function HistoryScreen({ onBack }) {
       .catch(() => setLoading(false))
   }, [auth])
 
+  const handleDelete = async (gameId) => {
+    if (!confirm('Удалить эту игру?')) return
+    try {
+      const r = await fetch(`/api/games/${gameId}`, {
+        method: 'DELETE',
+        headers: { 'x-telegram-init-data': auth.initData },
+      })
+      if (r.ok) setGames(games.filter(g => g.id !== gameId))
+    } catch {}
+  }
+
   return (
     <div className="min-h-screen px-4 py-6">
       <div className="max-w-sm mx-auto">
@@ -454,9 +465,17 @@ function HistoryScreen({ onBack }) {
                   <span className="text-xs text-gray-400">
                     {new Date(g.created_at).toLocaleDateString('ru-RU')}
                   </span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${
-                    g.status === 'finished' ? 'bg-green-900/30 text-green-400' : 'bg-yellow-900/30 text-yellow-400'
-                  }`}>{g.status === 'finished' ? 'Завершена' : 'Активна'}</span>
+                  <div className="flex items-center gap-2">
+                    {(g.round_count || 0) === 0 && (
+                      <button
+                        onClick={() => handleDelete(g.id)}
+                        className="text-xs px-2 py-0.5 rounded-full bg-red-900/30 text-red-400 hover:bg-red-900/50 transition-colors"
+                      >Удалить</button>
+                    )}
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${
+                      g.status === 'finished' ? 'bg-green-900/30 text-green-400' : 'bg-yellow-900/30 text-yellow-400'
+                    }`}>{g.status === 'finished' ? 'Завершена' : 'Активна'}</span>
+                  </div>
                 </div>
                 <p className="text-sm text-white mb-1">{(g.player_names || []).join(', ')}</p>
                 <p className="text-xs text-gray-400">{g.round_count || 0} раунд. · до {g.max_score} очков</p>

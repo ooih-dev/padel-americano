@@ -91,7 +91,9 @@ export default async function handler(req, res) {
   if (req.query.list === 'players') {
     const result = await pool.query(
       `SELECT DISTINCT player_name FROM (
-        SELECT jsonb_array_elements_text(player_names) AS player_name FROM padel_games
+        SELECT jsonb_array_elements_text(g.player_names) AS player_name
+        FROM padel_games g
+        WHERE EXISTS (SELECT 1 FROM padel_rounds r WHERE r.game_id = g.id)
       ) sub ORDER BY player_name`
     )
     return res.status(200).json({ players: result.rows.map(r => r.player_name) })
