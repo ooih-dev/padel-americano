@@ -78,7 +78,7 @@ function SetupScreen({ onStart, onShowHistory, onShowStats }) {
       return saved
     } catch { return ['', '', '', ''] }
   })
-  const [maxScore, setMaxScore] = useState(24)
+  const [maxScore, setMaxScore] = useState(21)
   const [knownNames, setKnownNames] = useState([])
 
   useEffect(() => {
@@ -139,18 +139,37 @@ function SetupScreen({ onStart, onShowHistory, onShowStats }) {
 
         <div className="mb-6">
           <p className="text-sm text-gray-400 mb-2 text-center">Очков за сет</p>
-          <div className="flex gap-2 justify-center">
-            {[16, 21, 24, 31, 32].map(s => (
+          <div className="flex gap-2 justify-center items-center">
+            {[21, 31].map(s => (
               <button
                 key={s}
                 onClick={() => setMaxScore(s)}
-                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+                className={`px-5 py-2 rounded-xl text-sm font-medium transition-all ${
                   maxScore === s
                     ? 'bg-green-600 text-white shadow-lg shadow-green-600/30'
                     : 'bg-white/10 text-gray-300 hover:bg-white/15'
                 }`}
               >{s}</button>
             ))}
+            <input
+              type="number"
+              min="1"
+              max="999"
+              placeholder="Своё"
+              value={maxScore !== 21 && maxScore !== 31 ? maxScore : ''}
+              onChange={e => {
+                const v = parseInt(e.target.value)
+                if (v > 0) setMaxScore(v)
+              }}
+              onFocus={() => { if (maxScore === 21 || maxScore === 31) setMaxScore('') }}
+              onBlur={() => { if (!maxScore || maxScore <= 0) setMaxScore(21) }}
+              className={`w-20 px-3 py-2 rounded-xl text-sm font-medium text-center transition-all ${
+                maxScore !== 21 && maxScore !== 31 && maxScore !== ''
+                  ? 'bg-green-600 text-white shadow-lg shadow-green-600/30 border border-green-600'
+                  : 'bg-white/10 text-gray-300 border border-white/10'
+              }`}
+              inputMode="numeric"
+            />
           </div>
         </div>
 
@@ -616,7 +635,7 @@ function StatsScreen({ onBack }) {
 function App() {
   const [screen, setScreen] = useState('setup')
   const [players, setPlayers] = useState([])
-  const [maxScore, setMaxScore] = useState(24)
+  const [maxScore, setMaxScore] = useState(21)
   const [scores, setScores] = useState({})
   const [roundNum, setRoundNum] = useState(1)
   const [roundHistory, setRoundHistory] = useState([])
