@@ -200,13 +200,16 @@ function SetupScreen({ onStart, onShowHistory, onShowStats }) {
   )
 }
 
-function GameScreen({ players, maxScore, scores, onFinish, roundNum, onNewRound, roundHistory }) {
+function GameScreen({ players, maxScore, scores, onFinish, roundNum, onNewRound, roundHistory, gameId }) {
   const [sets, setSets] = useState(() => generateSets(players))
   const [setScores, setSetScores] = useState([null, null, null])
   const [currentSet, setCurrentSet] = useState(0)
   const [localScores, setLocalScores] = useState({ ...scores })
   const [completedSets, setCompletedSets] = useState([])
   const [localRoundHistory, setLocalRoundHistory] = useState(roundHistory)
+  const [editingRound, setEditingRound] = useState(null)
+  const [editScores, setEditScores] = useState({})
+  const auth = useAuth()
 
   const handleScore = (setIdx, team1Score) => {
     const score = Math.min(Math.max(0, team1Score), maxScore)
@@ -238,7 +241,70 @@ function GameScreen({ players, maxScore, scores, onFinish, roundNum, onNewRound,
     if (setIdx < 2) setCurrentSet(setIdx + 1)
   }
 
+  const startEditPrevRound = (ri) => {
+    const round = localRoundHistory[ri]
+    if (!round) return
+    setEditingRound(ri)
+    const es = {}
+    round.sets.forEach((s, si) => {
+      es[si] = { team1: s.scores?.team1 ?? 0, team2: s.scores?.team2 ?? 0 }
+    })
+    setEditScores(es)
+  }
+
+  const saveEditPrevRound = (ri) => {
+    const round = localRoundHistory[ri]
+    if (!round) return
+
+    const recalcScores = {}
+    players.forEach(p => { recalcScores[p] = 0 })
+
+    const updatedHistory = [...localRoundHistory]
+    round.sets.forEach((s, si) => {
+      updatedHistory[ri].sets[si].scores = { team1: editScores[si].team1, team2: editScores[si].team2 }
+    })
+
+    updatedHistory.filter(Boolean).forEach((r, rIdx) => {
+      if (rIdx === roundNum - 1 && completedSets.length < 3) return
+      r.sets.forEach(s => {
+        if (!s.scores) return
+        s.team1.forEach(p => { recalcScores[p] = (recalcScores[p] || 0) + s.scores.team1 })
+        s.team2.forEach(p => { recalcScores[p] = (recalcScores[p] || 0) + s.scores.team2 })
+      })
+    })
+    if (completedSets.length > 0) {
+      const curRound = updatedHistory[roundNum - 1]
+      if (curRound) {
+        completedSets.forEach(si => {
+          const s = curRound.sets[si]
+          if (s?.scores) {
+            s.team1.forEach(p => { recalcScores[p] = (recalcScores[p] || 0) + s.scores.team1 })
+            s.team2.forEach(p => { recalcScores[p] = (recalcScores[p] || 0) + s.scores.team2 })
+          }
+        })
+      }
+    }
+
+    setLocalRoundHistory(updatedHistory)
+    setLocalScores(recalcScores)
+    setEditingRound(null)
+
+    if (auth?.initData && gameId) {
+      const apiSets = round.sets.map((s, si) => ({
+        set_number: si + 1,
+        team1_score: editScores[si].team1,
+        team2_score: editScores[si].team2,
+      }))
+      fetch(`/api/games/${gameId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'x-telegram-init-data': auth.initData },
+        body: JSON.stringify({ action: 'edit_round', round_number: ri + 1, sets: apiSets }),
+      }).catch(() => {})
+    }
+  }
+
   const allDone = completedSets.length === 3
+  const previousRounds = localRoundHistory.slice(0, roundNum - 1).filter(Boolean)
 
   const leaderboard = players
     .map(p => ({
@@ -358,6 +424,48 @@ function GameScreen({ players, maxScore, scores, onFinish, roundNum, onNewRound,
               onClick={() => onFinish(localScores, localRoundHistory)}
               className="w-full py-3 rounded-xl border border-red-500/40 text-red-400 text-sm font-semibold hover:bg-red-500/10 transition-all"
             >Завершить игру</button>
+          </div>
+        )}
+
+        {previousRounds.length > 0 && (
+          <div className="mt-6">
+            <h2 className="text-xs text-gray-400 uppercase tracking-wider mb-3">Предыдущие раунды</h2>
+            {previousRounds.map((round, ri) => (
+              <div key={ri} className="bg-white/5 rounded-2xl p-3 mb-2">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-xs text-gray-400">Раунд {ri + 1}</span>
+                  {editingRound === ri ? (
+                    <div className="flex gap-2">
+                      <button onClick={() => saveEditPrevRound(ri)} className="text-xs text-green-400">Сохранить</button>
+                      <button onClick={() => setEditingRound(null)} className="text-xs text-gray-400">Отмена</button>
+                    </div>
+                  ) : (
+                    <button onClick={() => startEditPrevRound(ri)} className="text-xs text-blue-400">✏️</button>
+                  )}
+                </div>
+                {round.sets.map((s, si) => (
+                  <div key={si} className="flex items-center justify-between gap-2 mb-1 text-xs">
+                    <span className="text-gray-400 flex-1 text-right truncate">{s.team1.join(' & ')}</span>
+                    {editingRound === ri ? (
+                      <>
+                        <input type="number" inputMode="numeric" className="w-10 text-center bg-white/10 rounded py-0.5 text-white border border-white/20 text-xs"
+                          value={editScores[si]?.team1 ?? 0}
+                          onChange={e => setEditScores({ ...editScores, [si]: { ...editScores[si], team1: parseInt(e.target.value) || 0 } })}
+                        />
+                        <span className="text-gray-500">:</span>
+                        <input type="number" inputMode="numeric" className="w-10 text-center bg-white/10 rounded py-0.5 text-white border border-white/20 text-xs"
+                          value={editScores[si]?.team2 ?? 0}
+                          onChange={e => setEditScores({ ...editScores, [si]: { ...editScores[si], team2: parseInt(e.target.value) || 0 } })}
+                        />
+                      </>
+                    ) : (
+                      <span className="text-white font-mono">{s.scores?.team1 ?? 0}:{s.scores?.team2 ?? 0}</span>
+                    )}
+                    <span className="text-gray-400 flex-1 truncate">{s.team2.join(' & ')}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -882,6 +990,7 @@ function App() {
           players={players} maxScore={maxScore} scores={scores}
           onFinish={handleFinish} roundNum={roundNum}
           onNewRound={handleNewRound} roundHistory={roundHistory}
+          gameId={gameId}
         />
       )}
       {screen === 'results' && (
