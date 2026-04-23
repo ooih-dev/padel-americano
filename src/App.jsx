@@ -329,13 +329,15 @@ function GameScreen({ players, maxScore, scores, onFinish, roundNum, onNewRound,
 
         {allDone && (
           <div className="mt-6 space-y-3">
-            <button
-              onClick={startNewRound}
-              className="w-full py-3 rounded-xl bg-white/10 text-white text-sm font-semibold hover:bg-white/15 transition-all"
-            >Следующий раунд →</button>
+            {roundNum < 12 && (
+              <button
+                onClick={startNewRound}
+                className="w-full py-3 rounded-xl bg-green-600 text-white text-sm font-semibold shadow-lg shadow-green-600/30 active:scale-[0.98] transition-all"
+              >Следующий раунд →</button>
+            )}
             <button
               onClick={() => onFinish(localScores, localRoundHistory)}
-              className="w-full py-3 rounded-xl bg-green-600 text-white text-sm font-semibold shadow-lg shadow-green-600/30 active:scale-[0.98] transition-all"
+              className="w-full py-3 rounded-xl border border-red-500/40 text-red-400 text-sm font-semibold hover:bg-red-500/10 transition-all"
             >Завершить игру</button>
           </div>
         )}
