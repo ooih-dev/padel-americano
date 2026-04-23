@@ -1,11 +1,8 @@
-import { useState, useEffect, useCallback, createContext, useContext } from 'react'
+import { useState, useEffect, useCallback, createContext, useContext, useRef } from 'react'
 import './index.css'
 
 const AuthContext = createContext(null)
-
-function useAuth() {
-  return useContext(AuthContext)
-}
+function useAuth() { return useContext(AuthContext) }
 
 function shuffle(arr) {
   const a = [...arr]
@@ -39,13 +36,65 @@ function calcDiff(playerName, roundHistory) {
   return diff
 }
 
-function SetupScreen({ onStart, onShowHistory }) {
+function PlayerInput({ value, onChange, placeholder, knownNames }) {
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const ref = useRef(null)
+
+  const filtered = knownNames.filter(n =>
+    n.toLowerCase().includes(value.toLowerCase()) && n !== value
+  ).slice(0, 5)
+
+  return (
+    <div className="relative" ref={ref}>
+      <input
+        type="text"
+        placeholder={placeholder}
+        value={value}
+        onChange={e => { onChange(e.target.value); setShowSuggestions(true) }}
+        onFocus={() => setShowSuggestions(true)}
+        onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+        className="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/10 text-white placeholder-gray-500 text-base"
+      />
+      {showSuggestions && value.length > 0 && filtered.length > 0 && (
+        <div className="absolute top-full left-0 right-0 mt-1 bg-[#1e2344] border border-white/10 rounded-xl overflow-hidden z-10">
+          {filtered.map(n => (
+            <button
+              key={n}
+              onMouseDown={() => { onChange(n); setShowSuggestions(false) }}
+              className="w-full px-4 py-2 text-left text-sm text-gray-300 hover:bg-white/10 transition-colors"
+            >{n}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SetupScreen({ onStart, onShowHistory, onShowStats }) {
+  const auth = useAuth()
   const [names, setNames] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('padel_names')) || ['', '', '', ''] }
-    catch { return ['', '', '', ''] }
+    try {
+      const saved = JSON.parse(localStorage.getItem('padel_names')) || ['', '', '', '']
+      return saved
+    } catch { return ['', '', '', ''] }
   })
   const [maxScore, setMaxScore] = useState(24)
-  const auth = useAuth()
+  const [knownNames, setKnownNames] = useState([])
+
+  useEffect(() => {
+    if (auth?.player && names[0] === '') {
+      const n = [...names]
+      n[0] = auth.player.name
+      setNames(n)
+    }
+  }, [auth])
+
+  useEffect(() => {
+    try {
+      const prev = JSON.parse(localStorage.getItem('padel_known_names') || '[]')
+      setKnownNames(prev)
+    } catch {}
+  }, [])
 
   const updateName = (i, val) => {
     const n = [...names]
@@ -59,6 +108,8 @@ function SetupScreen({ onStart, onShowHistory }) {
     if (!canStart) return
     const trimmed = names.map(n => n.trim())
     localStorage.setItem('padel_names', JSON.stringify(trimmed))
+    const all = new Set([...knownNames, ...trimmed])
+    localStorage.setItem('padel_known_names', JSON.stringify([...all]))
     onStart(trimmed, maxScore)
   }
 
@@ -68,7 +119,7 @@ function SetupScreen({ onStart, onShowHistory }) {
         <div className="text-center mb-8">
           <div className="text-5xl mb-3">🎾</div>
           <h1 className="text-2xl font-bold text-white mb-1">Padel Americano</h1>
-          <p className="text-sm text-gray-400">Score Tracker</p>
+          <p className="text-sm text-gray-400">Счётчик очков</p>
           {auth?.player && (
             <p className="text-xs text-green-400 mt-1">👤 {auth.player.name}</p>
           )}
@@ -76,19 +127,18 @@ function SetupScreen({ onStart, onShowHistory }) {
 
         <div className="space-y-3 mb-6">
           {names.map((name, i) => (
-            <input
+            <PlayerInput
               key={i}
-              type="text"
-              placeholder={`Player ${i + 1}`}
               value={name}
-              onChange={e => updateName(i, e.target.value)}
-              className="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/10 text-white placeholder-gray-500 text-base"
+              onChange={val => updateName(i, val)}
+              placeholder={`Игрок ${i + 1}`}
+              knownNames={knownNames}
             />
           ))}
         </div>
 
         <div className="mb-6">
-          <p className="text-sm text-gray-400 mb-2 text-center">Points per set</p>
+          <p className="text-sm text-gray-400 mb-2 text-center">Очков за сет</p>
           <div className="flex gap-2 justify-center">
             {[16, 21, 24, 31, 32].map(s => (
               <button
@@ -99,9 +149,7 @@ function SetupScreen({ onStart, onShowHistory }) {
                     ? 'bg-green-600 text-white shadow-lg shadow-green-600/30'
                     : 'bg-white/10 text-gray-300 hover:bg-white/15'
                 }`}
-              >
-                {s}
-              </button>
+              >{s}</button>
             ))}
           </div>
         </div>
@@ -114,17 +162,19 @@ function SetupScreen({ onStart, onShowHistory }) {
               ? 'bg-green-600 text-white shadow-lg shadow-green-600/30 active:scale-[0.98]'
               : 'bg-white/5 text-gray-600 cursor-not-allowed'
           }`}
-        >
-          Start Game
-        </button>
+        >Начать игру</button>
 
         {auth?.player && (
-          <button
-            onClick={onShowHistory}
-            className="w-full mt-3 py-3 rounded-xl bg-white/5 text-gray-300 text-sm font-medium hover:bg-white/10 transition-all"
-          >
-            📋 My Games
-          </button>
+          <div className="flex gap-2 mt-3">
+            <button
+              onClick={onShowHistory}
+              className="flex-1 py-3 rounded-xl bg-white/5 text-gray-300 text-sm font-medium hover:bg-white/10 transition-all"
+            >📋 История</button>
+            <button
+              onClick={onShowStats}
+              className="flex-1 py-3 rounded-xl bg-white/5 text-gray-300 text-sm font-medium hover:bg-white/10 transition-all"
+            >📊 Статистика</button>
+          </div>
         )}
       </div>
     </div>
@@ -161,7 +211,7 @@ function GameScreen({ players, maxScore, scores, onFinish, roundNum, onNewRound,
 
     const updatedHistory = [...localRoundHistory]
     if (!updatedHistory[roundNum - 1]) {
-      updatedHistory[roundNum - 1] = { sets: sets.map((st, i) => ({ team1: st.team1, team2: st.team2, scores: null })) }
+      updatedHistory[roundNum - 1] = { sets: sets.map(st => ({ team1: st.team1, team2: st.team2, scores: null })) }
     }
     updatedHistory[roundNum - 1].sets[setIdx].scores = { team1: s.team1, team2: s.team2 }
     setLocalRoundHistory(updatedHistory)
@@ -181,8 +231,7 @@ function GameScreen({ players, maxScore, scores, onFinish, roundNum, onNewRound,
 
   const startNewRound = () => {
     onNewRound(localScores, localRoundHistory)
-    const newSets = generateSets(players)
-    setSets(newSets)
+    setSets(generateSets(players))
     setSetScores([null, null, null])
     setCurrentSet(0)
     setCompletedSets([])
@@ -192,14 +241,14 @@ function GameScreen({ players, maxScore, scores, onFinish, roundNum, onNewRound,
     <div className="min-h-screen px-4 py-6 pb-32">
       <div className="max-w-sm mx-auto">
         <div className="flex items-center justify-between mb-5">
-          <h1 className="text-lg font-bold text-white">Round {roundNum}</h1>
+          <h1 className="text-lg font-bold text-white">Раунд {roundNum}</h1>
           <span className="text-xs text-gray-400">
-            Set {Math.min(completedSets.length + 1, 3)}/3 · to {maxScore} pts
+            Сет {Math.min(completedSets.length + 1, 3)}/3 · до {maxScore} очков
           </span>
         </div>
 
         <div className="bg-white/5 rounded-2xl p-4 mb-5">
-          <h2 className="text-xs text-gray-400 uppercase tracking-wider mb-3">Leaderboard</h2>
+          <h2 className="text-xs text-gray-400 uppercase tracking-wider mb-3">Таблица</h2>
           <div className="space-y-2">
             {leaderboard.map((p, i) => (
               <div key={p.name} className="flex items-center justify-between">
@@ -209,9 +258,7 @@ function GameScreen({ players, maxScore, scores, onFinish, roundNum, onNewRound,
                     i === 1 ? 'bg-gray-400/20 text-gray-300' :
                     i === 2 ? 'bg-amber-700/20 text-amber-600' :
                     'bg-white/5 text-gray-500'
-                  }`}>
-                    {i + 1}
-                  </span>
+                  }`}>{i + 1}</span>
                   <span className="text-sm text-white">{p.name}</span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -239,46 +286,33 @@ function GameScreen({ players, maxScore, scores, onFinish, roundNum, onNewRound,
                 }`}
               >
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs text-gray-400 uppercase tracking-wider">Set {idx + 1}</span>
+                  <span className="text-xs text-gray-400 uppercase tracking-wider">Сет {idx + 1}</span>
                   {done && <span className="text-xs text-green-400">✓</span>}
                 </div>
 
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex-1 text-center">
-                    <p className="text-xs text-gray-400 mb-1">
-                      {set.team1[0]} & {set.team1[1]}
-                    </p>
+                    <p className="text-xs text-gray-400 mb-1">{set.team1[0]} & {set.team1[1]}</p>
                     {done ? (
                       <span className="text-xl font-bold text-white">{setScores[idx]?.team1}</span>
                     ) : active ? (
                       <input
-                        type="number"
-                        min="0"
-                        max={maxScore}
-                        placeholder="0"
+                        type="number" min="0" max={maxScore} placeholder="0"
                         value={setScores[idx]?.team1 ?? ''}
                         onChange={e => handleScore(idx, parseInt(e.target.value) || 0)}
                         className="w-16 mx-auto text-center text-xl font-bold bg-white/10 rounded-lg py-1.5 text-white border border-white/10"
                         inputMode="numeric"
                       />
-                    ) : (
-                      <span className="text-xl text-gray-600">—</span>
-                    )}
+                    ) : <span className="text-xl text-gray-600">—</span>}
                   </div>
-
                   <span className="text-gray-500 text-sm font-bold">vs</span>
-
                   <div className="flex-1 text-center">
-                    <p className="text-xs text-gray-400 mb-1">
-                      {set.team2[0]} & {set.team2[1]}
-                    </p>
+                    <p className="text-xs text-gray-400 mb-1">{set.team2[0]} & {set.team2[1]}</p>
                     {done ? (
                       <span className="text-xl font-bold text-white">{setScores[idx]?.team2}</span>
                     ) : active && setScores[idx] !== null ? (
                       <span className="text-xl font-bold text-green-400">{setScores[idx]?.team2}</span>
-                    ) : (
-                      <span className="text-xl text-gray-600">—</span>
-                    )}
+                    ) : <span className="text-xl text-gray-600">—</span>}
                   </div>
                 </div>
 
@@ -286,9 +320,7 @@ function GameScreen({ players, maxScore, scores, onFinish, roundNum, onNewRound,
                   <button
                     onClick={() => confirmSet(idx)}
                     className="w-full mt-3 py-2 rounded-xl bg-green-600 text-white text-sm font-medium active:scale-[0.98] transition-transform"
-                  >
-                    Confirm
-                  </button>
+                  >Подтвердить</button>
                 )}
               </div>
             )
@@ -300,15 +332,11 @@ function GameScreen({ players, maxScore, scores, onFinish, roundNum, onNewRound,
             <button
               onClick={startNewRound}
               className="w-full py-3 rounded-xl bg-white/10 text-white text-sm font-semibold hover:bg-white/15 transition-all"
-            >
-              Next Round →
-            </button>
+            >Следующий раунд →</button>
             <button
               onClick={() => onFinish(localScores, localRoundHistory)}
               className="w-full py-3 rounded-xl bg-green-600 text-white text-sm font-semibold shadow-lg shadow-green-600/30 active:scale-[0.98] transition-all"
-            >
-              Finish Game
-            </button>
+            >Завершить игру</button>
           </div>
         )}
       </div>
@@ -335,8 +363,8 @@ function ResultsScreen({ players, scores, roundHistory, onNewGame }) {
     'from-white/5 to-white/0 border-white/10',
   ]
 
-  const shareText = `🎾 Padel Americano Results\n${leaderboard.map((p, i) =>
-    `${medals[Math.min(i, 3)]} ${p.name} — ${p.score} pts (${p.diff >= 0 ? '+' : ''}${p.diff})`
+  const shareText = `🎾 Padel Americano\n${leaderboard.map((p, i) =>
+    `${medals[Math.min(i, 3)]} ${p.name} — ${p.score} очк. (${p.diff >= 0 ? '+' : ''}${p.diff})`
   ).join('\n')}`
 
   const handleShare = async () => {
@@ -356,8 +384,8 @@ function ResultsScreen({ players, scores, roundHistory, onNewGame }) {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <div className="text-5xl mb-3">🏆</div>
-          <h1 className="text-2xl font-bold text-white mb-1">Final Results</h1>
-          <p className="text-xs text-gray-400">{roundHistory.filter(Boolean).length} round(s) played</p>
+          <h1 className="text-2xl font-bold text-white mb-1">Результаты</h1>
+          <p className="text-xs text-gray-400">Раундов: {roundHistory.filter(Boolean).length}</p>
         </div>
 
         <div className="space-y-3 mb-6">
@@ -370,9 +398,7 @@ function ResultsScreen({ players, scores, roundHistory, onNewGame }) {
                 <span className="text-2xl w-8">{medals[Math.min(i, 3)]}</span>
                 <div className="text-left">
                   <p className="text-white font-semibold">{p.name}</p>
-                  <p className="text-xs text-gray-400">
-                    diff: {p.diff >= 0 ? '+' : ''}{p.diff}
-                  </p>
+                  <p className="text-xs text-gray-400">разница: {p.diff >= 0 ? '+' : ''}{p.diff}</p>
                 </div>
               </div>
               <span className="text-2xl font-mono font-bold text-green-400">{p.score}</span>
@@ -381,18 +407,12 @@ function ResultsScreen({ players, scores, roundHistory, onNewGame }) {
         </div>
 
         <div className="space-y-3">
-          <button
-            onClick={handleShare}
+          <button onClick={handleShare}
             className="w-full py-3 rounded-xl bg-white/10 text-white text-sm font-semibold hover:bg-white/15 transition-all"
-          >
-            {shared ? '✓ Copied!' : '📤 Share Results'}
-          </button>
-          <button
-            onClick={onNewGame}
+          >{shared ? '✓ Скопировано!' : '📤 Поделиться'}</button>
+          <button onClick={onNewGame}
             className="w-full py-3.5 rounded-xl bg-green-600 text-white text-base font-semibold shadow-lg shadow-green-600/30 active:scale-[0.98] transition-all"
-          >
-            New Game
-          </button>
+          >Новая игра</button>
         </div>
       </div>
     </div>
@@ -406,9 +426,7 @@ function HistoryScreen({ onBack }) {
 
   useEffect(() => {
     if (!auth?.initData) return
-    fetch('/api/games', {
-      headers: { 'x-telegram-init-data': auth.initData }
-    })
+    fetch('/api/games', { headers: { 'x-telegram-init-data': auth.initData } })
       .then(r => r.json())
       .then(data => { setGames(data.games || []); setLoading(false) })
       .catch(() => setLoading(false))
@@ -418,34 +436,28 @@ function HistoryScreen({ onBack }) {
     <div className="min-h-screen px-4 py-6">
       <div className="max-w-sm mx-auto">
         <div className="flex items-center gap-3 mb-6">
-          <button onClick={onBack} className="text-gray-400 hover:text-white text-sm">← Back</button>
-          <h1 className="text-lg font-bold text-white">My Games</h1>
+          <button onClick={onBack} className="text-gray-400 hover:text-white text-sm">← Назад</button>
+          <h1 className="text-lg font-bold text-white">История игр</h1>
         </div>
 
         {loading ? (
-          <p className="text-gray-400 text-center py-8">Loading...</p>
+          <p className="text-gray-400 text-center py-8">Загрузка...</p>
         ) : games.length === 0 ? (
-          <p className="text-gray-400 text-center py-8">No games yet</p>
+          <p className="text-gray-400 text-center py-8">Пока нет игр</p>
         ) : (
           <div className="space-y-3">
             {games.map(g => (
               <div key={g.id} className="bg-white/5 rounded-2xl p-4">
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-xs text-gray-400">
-                    {new Date(g.created_at).toLocaleDateString()}
+                    {new Date(g.created_at).toLocaleDateString('ru-RU')}
                   </span>
                   <span className={`text-xs px-2 py-0.5 rounded-full ${
                     g.status === 'finished' ? 'bg-green-900/30 text-green-400' : 'bg-yellow-900/30 text-yellow-400'
-                  }`}>
-                    {g.status === 'finished' ? 'Done' : 'Active'}
-                  </span>
+                  }`}>{g.status === 'finished' ? 'Завершена' : 'Активна'}</span>
                 </div>
-                <p className="text-sm text-white mb-1">
-                  {(g.player_names || []).join(', ')}
-                </p>
-                <p className="text-xs text-gray-400">
-                  {g.round_count || 0} rounds · to {g.max_score} pts
-                </p>
+                <p className="text-sm text-white mb-1">{(g.player_names || []).join(', ')}</p>
+                <p className="text-xs text-gray-400">{g.round_count || 0} раунд. · до {g.max_score} очков</p>
                 {g.scores && g.scores.length > 0 && (
                   <div className="mt-2 space-y-1">
                     {g.scores.map((s, i) => (
@@ -459,6 +471,96 @@ function HistoryScreen({ onBack }) {
               </div>
             ))}
           </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function StatsScreen({ onBack }) {
+  const [stats, setStats] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const auth = useAuth()
+
+  useEffect(() => {
+    if (!auth?.initData) return
+    fetch('/api/stats', { headers: { 'x-telegram-init-data': auth.initData } })
+      .then(r => r.json())
+      .then(data => { setStats(data); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [auth])
+
+  if (loading) return (
+    <div className="min-h-screen px-4 py-6">
+      <div className="max-w-sm mx-auto">
+        <p className="text-gray-400 text-center py-8">Загрузка...</p>
+      </div>
+    </div>
+  )
+
+  if (!stats) return (
+    <div className="min-h-screen px-4 py-6">
+      <div className="max-w-sm mx-auto">
+        <button onClick={onBack} className="text-gray-400 hover:text-white text-sm mb-4">← Назад</button>
+        <p className="text-gray-400 text-center py-8">Нет данных</p>
+      </div>
+    </div>
+  )
+
+  const statItems = [
+    { label: 'Всего игр', value: stats.total_games, icon: '🎮' },
+    { label: 'Победы', value: stats.wins, icon: '🏆' },
+    { label: 'Поражения', value: stats.losses, icon: '💔' },
+    { label: 'Процент побед', value: `${stats.win_rate}%`, icon: '📈' },
+    { label: 'Забитые мячи', value: stats.total_scored, icon: '⚡' },
+    { label: 'Пропущенные', value: stats.total_conceded, icon: '🛡' },
+    { label: 'Разница мячей', value: stats.point_diff >= 0 ? `+${stats.point_diff}` : stats.point_diff, icon: '📊' },
+    { label: 'Ср. очков за игру', value: stats.avg_score, icon: '📉' },
+  ]
+
+  return (
+    <div className="min-h-screen px-4 py-6">
+      <div className="max-w-sm mx-auto">
+        <div className="flex items-center gap-3 mb-6">
+          <button onClick={onBack} className="text-gray-400 hover:text-white text-sm">← Назад</button>
+          <h1 className="text-lg font-bold text-white">Моя статистика</h1>
+        </div>
+
+        <div className="text-center mb-6">
+          <div className="text-3xl mb-1">👤</div>
+          <p className="text-white font-semibold">{stats.player}</p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 mb-6">
+          {statItems.map(s => (
+            <div key={s.label} className="bg-white/5 rounded-2xl p-3 text-center">
+              <div className="text-lg mb-1">{s.icon}</div>
+              <p className="text-lg font-bold text-white">{s.value}</p>
+              <p className="text-xs text-gray-400">{s.label}</p>
+            </div>
+          ))}
+        </div>
+
+        {stats.recent_games && stats.recent_games.length > 0 && (
+          <>
+            <h2 className="text-sm text-gray-400 uppercase tracking-wider mb-3">Последние игры</h2>
+            <div className="space-y-2">
+              {stats.recent_games.slice(0, 10).map(g => (
+                <div key={g.id} className="bg-white/5 rounded-xl p-3 flex justify-between items-center">
+                  <div>
+                    <p className="text-xs text-gray-400">{new Date(g.date).toLocaleDateString('ru-RU')}</p>
+                    <p className="text-sm text-white">{g.players.join(', ')}</p>
+                  </div>
+                  <div className="text-right">
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${g.is_winner ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'}`}>
+                      {g.is_winner ? 'Победа' : 'Поражение'}
+                    </span>
+                    <p className="text-xs text-gray-400 mt-1">{g.my_score} очк.</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
     </div>
@@ -493,9 +595,7 @@ function App() {
           })
             .then(r => r.json())
             .then(data => {
-              if (data.player) {
-                setAuth({ player: data.player, initData: tg.initData })
-              }
+              if (data.player) setAuth({ player: data.player, initData: tg.initData })
             })
             .catch(() => {})
         }
@@ -514,10 +614,7 @@ function App() {
     if (auth.initData) {
       fetch('/api/games', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-telegram-init-data': auth.initData,
-        },
+        headers: { 'Content-Type': 'application/json', 'x-telegram-init-data': auth.initData },
         body: JSON.stringify({ max_score: max, player_names: names }),
       }).catch(() => {})
     }
@@ -546,30 +643,24 @@ function App() {
   return (
     <AuthContext.Provider value={auth}>
       {screen === 'setup' && (
-        <SetupScreen onStart={handleStart} onShowHistory={() => setScreen('history')} />
+        <SetupScreen
+          onStart={handleStart}
+          onShowHistory={() => setScreen('history')}
+          onShowStats={() => setScreen('stats')}
+        />
       )}
       {screen === 'game' && (
         <GameScreen
-          players={players}
-          maxScore={maxScore}
-          scores={scores}
-          onFinish={handleFinish}
-          roundNum={roundNum}
-          onNewRound={handleNewRound}
-          roundHistory={roundHistory}
+          players={players} maxScore={maxScore} scores={scores}
+          onFinish={handleFinish} roundNum={roundNum}
+          onNewRound={handleNewRound} roundHistory={roundHistory}
         />
       )}
       {screen === 'results' && (
-        <ResultsScreen
-          players={players}
-          scores={scores}
-          roundHistory={roundHistory}
-          onNewGame={handleNewGame}
-        />
+        <ResultsScreen players={players} scores={scores} roundHistory={roundHistory} onNewGame={handleNewGame} />
       )}
-      {screen === 'history' && (
-        <HistoryScreen onBack={() => setScreen('setup')} />
-      )}
+      {screen === 'history' && <HistoryScreen onBack={() => setScreen('setup')} />}
+      {screen === 'stats' && <StatsScreen onBack={() => setScreen('setup')} />}
     </AuthContext.Provider>
   )
 }
