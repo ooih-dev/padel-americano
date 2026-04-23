@@ -164,18 +164,18 @@ function SetupScreen({ onStart, onShowHistory, onShowStats }) {
           }`}
         >Начать игру</button>
 
-        {auth?.player && (
-          <div className="flex gap-2 mt-3">
+        <div className="flex gap-2 mt-3">
+          {auth?.player && (
             <button
               onClick={onShowHistory}
               className="flex-1 py-3 rounded-xl bg-white/5 text-gray-300 text-sm font-medium hover:bg-white/10 transition-all"
             >📋 История</button>
-            <button
-              onClick={onShowStats}
-              className="flex-1 py-3 rounded-xl bg-white/5 text-gray-300 text-sm font-medium hover:bg-white/10 transition-all"
-            >📊 Статистика</button>
-          </div>
-        )}
+          )}
+          <button
+            onClick={onShowStats}
+            className="flex-1 py-3 rounded-xl bg-white/5 text-gray-300 text-sm font-medium hover:bg-white/10 transition-all"
+          >📊 Статистика</button>
+        </div>
       </div>
     </div>
   )
@@ -480,36 +480,36 @@ function HistoryScreen({ onBack }) {
 }
 
 function StatsScreen({ onBack }) {
+  const [players, setPlayers] = useState([])
+  const [selected, setSelected] = useState('')
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
   const auth = useAuth()
 
   useEffect(() => {
-    if (!auth?.initData) return
-    fetch('/api/stats', { headers: { 'x-telegram-init-data': auth.initData } })
+    fetch('/api/stats?list=players')
       .then(r => r.json())
-      .then(data => { setStats(data); setLoading(false) })
+      .then(data => {
+        const list = data.players || []
+        setPlayers(list)
+        const defaultName = auth?.player?.name || ''
+        const match = list.find(n => n === defaultName) || list[0] || ''
+        setSelected(match)
+        setLoading(false)
+      })
       .catch(() => setLoading(false))
   }, [auth])
 
-  if (loading) return (
-    <div className="min-h-screen px-4 py-6">
-      <div className="max-w-sm mx-auto">
-        <p className="text-gray-400 text-center py-8">Загрузка...</p>
-      </div>
-    </div>
-  )
+  useEffect(() => {
+    if (!selected) return
+    setStats(null)
+    fetch(`/api/stats?player=${encodeURIComponent(selected)}`)
+      .then(r => r.json())
+      .then(data => setStats(data))
+      .catch(() => {})
+  }, [selected])
 
-  if (!stats) return (
-    <div className="min-h-screen px-4 py-6">
-      <div className="max-w-sm mx-auto">
-        <button onClick={onBack} className="text-gray-400 hover:text-white text-sm mb-4">← Назад</button>
-        <p className="text-gray-400 text-center py-8">Нет данных</p>
-      </div>
-    </div>
-  )
-
-  const statItems = [
+  const statItems = stats ? [
     { label: 'Всего игр', value: stats.total_games, icon: '🎮' },
     { label: 'Победы', value: stats.wins, icon: '🏆' },
     { label: 'Поражения', value: stats.losses, icon: '💔' },
@@ -518,50 +518,75 @@ function StatsScreen({ onBack }) {
     { label: 'Пропущенные', value: stats.total_conceded, icon: '🛡' },
     { label: 'Разница мячей', value: stats.point_diff >= 0 ? `+${stats.point_diff}` : stats.point_diff, icon: '📊' },
     { label: 'Ср. очков за игру', value: stats.avg_score, icon: '📉' },
-  ]
+  ] : []
 
   return (
     <div className="min-h-screen px-4 py-6">
       <div className="max-w-sm mx-auto">
         <div className="flex items-center gap-3 mb-6">
           <button onClick={onBack} className="text-gray-400 hover:text-white text-sm">← Назад</button>
-          <h1 className="text-lg font-bold text-white">Моя статистика</h1>
+          <h1 className="text-lg font-bold text-white">Статистика</h1>
         </div>
 
-        <div className="text-center mb-6">
-          <div className="text-3xl mb-1">👤</div>
-          <p className="text-white font-semibold">{stats.player}</p>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3 mb-6">
-          {statItems.map(s => (
-            <div key={s.label} className="bg-white/5 rounded-2xl p-3 text-center">
-              <div className="text-lg mb-1">{s.icon}</div>
-              <p className="text-lg font-bold text-white">{s.value}</p>
-              <p className="text-xs text-gray-400">{s.label}</p>
-            </div>
-          ))}
-        </div>
-
-        {stats.recent_games && stats.recent_games.length > 0 && (
+        {loading ? (
+          <p className="text-gray-400 text-center py-8">Загрузка...</p>
+        ) : players.length === 0 ? (
+          <p className="text-gray-400 text-center py-8">Нет данных</p>
+        ) : (
           <>
-            <h2 className="text-sm text-gray-400 uppercase tracking-wider mb-3">Последние игры</h2>
-            <div className="space-y-2">
-              {stats.recent_games.slice(0, 10).map(g => (
-                <div key={g.id} className="bg-white/5 rounded-xl p-3 flex justify-between items-center">
-                  <div>
-                    <p className="text-xs text-gray-400">{new Date(g.date).toLocaleDateString('ru-RU')}</p>
-                    <p className="text-sm text-white">{g.players.join(', ')}</p>
-                  </div>
-                  <div className="text-right">
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${g.is_winner ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'}`}>
-                      {g.is_winner ? 'Победа' : 'Поражение'}
-                    </span>
-                    <p className="text-xs text-gray-400 mt-1">{g.my_score} очк.</p>
-                  </div>
-                </div>
-              ))}
+            <div className="mb-6">
+              <p className="text-xs text-gray-400 mb-2">Выберите игрока</p>
+              <select
+                value={selected}
+                onChange={e => setSelected(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/10 text-white text-base appearance-none"
+              >
+                {players.map(p => <option key={p} value={p} className="bg-[#1a1a2e] text-white">{p}</option>)}
+              </select>
             </div>
+
+            {!stats ? (
+              <p className="text-gray-400 text-center py-4">Загрузка...</p>
+            ) : (
+              <>
+                <div className="text-center mb-5">
+                  <div className="text-3xl mb-1">👤</div>
+                  <p className="text-white font-semibold">{stats.player}</p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 mb-6">
+                  {statItems.map(s => (
+                    <div key={s.label} className="bg-white/5 rounded-2xl p-3 text-center">
+                      <div className="text-lg mb-1">{s.icon}</div>
+                      <p className="text-lg font-bold text-white">{s.value}</p>
+                      <p className="text-xs text-gray-400">{s.label}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {stats.recent_games && stats.recent_games.length > 0 && (
+                  <>
+                    <h2 className="text-sm text-gray-400 uppercase tracking-wider mb-3">Последние игры</h2>
+                    <div className="space-y-2">
+                      {stats.recent_games.slice(0, 10).map(g => (
+                        <div key={g.id} className="bg-white/5 rounded-xl p-3 flex justify-between items-center">
+                          <div>
+                            <p className="text-xs text-gray-400">{new Date(g.date).toLocaleDateString('ru-RU')}</p>
+                            <p className="text-sm text-white">{g.players.join(', ')}</p>
+                          </div>
+                          <div className="text-right">
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${g.is_winner ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'}`}>
+                              {g.is_winner ? 'Победа' : 'Поражение'}
+                            </span>
+                            <p className="text-xs text-gray-400 mt-1">{g.my_score} очк.</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </>
+            )}
           </>
         )}
       </div>
