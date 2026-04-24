@@ -615,37 +615,38 @@ function GameDetailScreen({ gameId, onBack }) {
 
         {game.rounds.length > 0 && (() => {
           const stats = {}
-          playerNames.forEach(name => { stats[name] = { scored: 0, conceded: 0, points: 0 } })
+          playerNames.forEach(name => { stats[name] = { scored: 0, conceded: 0, setsWon: 0, setsLost: 0 } })
           for (const round of game.rounds) {
             for (const s of round.sets) {
               const t1 = typeof s.team1_names === 'string' ? JSON.parse(s.team1_names) : s.team1_names
               const t2 = typeof s.team2_names === 'string' ? JSON.parse(s.team2_names) : s.team2_names
               const s1 = s.team1_score || 0, s2 = s.team2_score || 0
-              t1.forEach(name => { if (stats[name]) { stats[name].scored += s1; stats[name].conceded += s2 } })
-              t2.forEach(name => { if (stats[name]) { stats[name].scored += s2; stats[name].conceded += s1 } })
+              t1.forEach(name => { if (stats[name]) { stats[name].scored += s1; stats[name].conceded += s2; if (s1 > s2) stats[name].setsWon++; else if (s2 > s1) stats[name].setsLost++ } })
+              t2.forEach(name => { if (stats[name]) { stats[name].scored += s2; stats[name].conceded += s1; if (s2 > s1) stats[name].setsWon++; else if (s1 > s2) stats[name].setsLost++ } })
             }
-          }
-          if (game.scores) {
-            game.scores.forEach(s => { if (stats[s.name]) stats[s.name].points = s.total_score })
           }
           const sorted = Object.entries(stats)
             .map(([name, s]) => ({ name, ...s, diff: s.scored - s.conceded }))
-            .sort((a, b) => b.points - a.points || b.diff - a.diff)
+            .sort((a, b) => b.setsWon - a.setsWon || b.diff - a.diff)
           return (
             <div className="bg-white/5 rounded-2xl p-4 mb-4">
-              <p className="text-xs text-gray-400 uppercase tracking-wider mb-3">Итоги</p>
+              <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">Итоги</p>
+              <div className="flex justify-end mb-1">
+                <span className="text-[10px] text-gray-500 font-mono">забито-пропущ.  +/-   В   П</span>
+              </div>
               {sorted.map((p, i) => (
                 <div key={p.name} className={`flex items-center justify-between py-1.5 ${i === 0 ? 'text-yellow-400' : 'text-gray-300'}`}>
                   <div className="flex items-center gap-2 min-w-0 flex-1">
                     <span className="text-xs w-5 text-center font-mono">{i === 0 ? '🏆' : `${i + 1}`}</span>
                     <span className="text-sm truncate">{p.name}</span>
                   </div>
-                  <div className="flex items-center gap-3 text-xs font-mono shrink-0">
-                    <span title="Забитые">{p.scored}</span>
+                  <div className="flex items-center gap-2 text-xs font-mono shrink-0">
+                    <span>{p.scored}</span>
                     <span className="text-gray-500">-</span>
-                    <span title="Пропущенные">{p.conceded}</span>
-                    <span className={`w-8 text-right ${p.diff > 0 ? 'text-green-400' : p.diff < 0 ? 'text-red-400' : 'text-gray-400'}`}>{p.diff > 0 ? `+${p.diff}` : p.diff}</span>
-                    <span className="w-8 text-right font-bold">{p.points}</span>
+                    <span>{p.conceded}</span>
+                    <span className={`w-7 text-right ${p.diff > 0 ? 'text-green-400' : p.diff < 0 ? 'text-red-400' : 'text-gray-400'}`}>{p.diff > 0 ? `+${p.diff}` : p.diff}</span>
+                    <span className="text-green-400 w-4 text-right">{p.setsWon}</span>
+                    <span className="text-red-400 w-4 text-right">{p.setsLost}</span>
                   </div>
                 </div>
               ))}
