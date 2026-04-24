@@ -15,7 +15,8 @@ async function getPlayerStats(pool, playerName) {
   })
 
   const totalGames = games.filter(g => g.status === 'finished').length
-  let wins = 0
+  let setWins = 0
+  let setLosses = 0
   let totalScored = 0
   let totalConceded = 0
   const recentGames = []
@@ -27,7 +28,8 @@ async function getPlayerStats(pool, playerName) {
 
     let myScore = 0
     let myConc = 0
-    const allPlayerScores = {}
+    let gameSW = 0
+    let gameSL = 0
 
     for (const round of roundsRes.rows) {
       const setsRes = await pool.query(
@@ -40,11 +42,13 @@ async function getPlayerStats(pool, playerName) {
         const s1 = s.team1_score || 0
         const s2 = s.team2_score || 0
 
-        for (const n of t1) { allPlayerScores[n] = (allPlayerScores[n] || 0) + s1 }
-        for (const n of t2) { allPlayerScores[n] = (allPlayerScores[n] || 0) + s2 }
-
-        if (t1.includes(playerName)) { myScore += s1; myConc += s2 }
-        else if (t2.includes(playerName)) { myScore += s2; myConc += s1 }
+        if (t1.includes(playerName)) {
+          myScore += s1; myConc += s2
+          if (s1 > s2) { setWins++; gameSW++ } else if (s2 > s1) { setLosses++; gameSL++ }
+        } else if (t2.includes(playerName)) {
+          myScore += s2; myConc += s1
+          if (s2 > s1) { setWins++; gameSW++ } else if (s1 > s2) { setLosses++; gameSL++ }
+        }
       }
     }
 
@@ -52,9 +56,6 @@ async function getPlayerStats(pool, playerName) {
     totalConceded += myConc
 
     const playerNames = typeof game.player_names === 'string' ? JSON.parse(game.player_names) : game.player_names
-    const sorted = playerNames.map(n => ({ name: n, score: allPlayerScores[n] || 0 })).sort((a, b) => b.score - a.score)
-    const isWinner = sorted.length > 0 && sorted[0].name === playerName
-    if (game.status === 'finished' && isWinner) wins++
 
     recentGames.push({
       id: game.id,
@@ -64,17 +65,22 @@ async function getPlayerStats(pool, playerName) {
       max_score: game.max_score,
       my_score: myScore,
       my_conceded: myConc,
-      is_winner: isWinner,
+      is_winner: gameSW > gameSL,
+      set_wins: gameSW,
+      set_losses: gameSL,
       rounds: roundsRes.rows.length,
     })
   }
 
+  const totalSets = setWins + setLosses
   return {
     player: playerName,
     total_games: totalGames,
-    wins,
-    losses: totalGames - wins,
-    win_rate: totalGames > 0 ? Math.round((wins / totalGames) * 100) : 0,
+    set_wins: setWins,
+    set_losses: setLosses,
+    wins: setWins,
+    losses: setLosses,
+    win_rate: totalSets > 0 ? Math.round((setWins / totalSets) * 100) : 0,
     total_scored: totalScored,
     total_conceded: totalConceded,
     point_diff: totalScored - totalConceded,

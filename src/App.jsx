@@ -631,8 +631,19 @@ function GameDetailScreen({ gameId, onBack }) {
           return (
             <div className="bg-white/5 rounded-2xl p-4 mb-4">
               <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">Итоги</p>
-              <div className="flex justify-end mb-1">
-                <span className="text-[10px] text-gray-500 font-mono">забито-пропущ.  +/-   В   П</span>
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <span className="w-5" />
+                  <span className="text-[10px] text-gray-500" />
+                </div>
+                <div className="flex items-center gap-2 text-[10px] font-mono text-gray-500 shrink-0">
+                  <span>забито</span>
+                  <span> </span>
+                  <span>пропущ</span>
+                  <span className="w-7 text-right">+/-</span>
+                  <span className="w-4 text-right">В</span>
+                  <span className="w-4 text-right">П</span>
+                </div>
               </div>
               {sorted.map((p, i) => (
                 <div key={p.name} className={`flex items-center justify-between py-1.5 ${i === 0 ? 'text-yellow-400' : 'text-gray-300'}`}>
@@ -853,8 +864,8 @@ function StatsScreen({ onBack }) {
 
   const statItems = stats ? [
     { label: 'Всего игр', value: stats.total_games, icon: '🎮' },
-    { label: 'Победы', value: stats.wins, icon: '🏆' },
-    { label: 'Поражения', value: stats.losses, icon: '💔' },
+    { label: 'Выигр. сеты', value: stats.set_wins ?? stats.wins, icon: '🏆' },
+    { label: 'Проигр. сеты', value: stats.set_losses ?? stats.losses, icon: '💔' },
     { label: 'Процент побед', value: `${stats.win_rate}%`, icon: '📈' },
     { label: 'Забитые мячи', value: stats.total_scored, icon: '⚡' },
     { label: 'Пропущенные', value: stats.total_conceded, icon: '🛡' },
