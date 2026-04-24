@@ -863,14 +863,13 @@ function StatsScreen({ onBack }) {
   }, [selected])
 
   const statItems = stats ? [
-    { label: 'Всего игр', value: stats.total_games, icon: '🎮' },
+    { label: 'Всего игр', value: stats.total_games, icon: '🎮', wide: true },
     { label: 'Выигр. сеты', value: stats.set_wins ?? stats.wins, icon: '🏆' },
     { label: 'Проигр. сеты', value: stats.set_losses ?? stats.losses, icon: '💔' },
-    { label: 'Процент побед', value: `${stats.win_rate}%`, icon: '📈' },
     { label: 'Забитые мячи', value: stats.total_scored, icon: '⚡' },
     { label: 'Пропущенные', value: stats.total_conceded, icon: '🛡' },
-    { label: 'Разница мячей', value: stats.point_diff >= 0 ? `+${stats.point_diff}` : stats.point_diff, icon: '📊' },
-    { label: 'Ср. очков за игру', value: stats.avg_score, icon: '📉' },
+    { label: 'Общий счёт', value: stats.point_diff >= 0 ? `+${stats.point_diff}` : stats.point_diff, icon: '📊' },
+    { label: 'Процент побед', value: `${stats.win_rate}%`, icon: '📈' },
   ] : []
 
   return (
@@ -909,7 +908,7 @@ function StatsScreen({ onBack }) {
 
                 <div className="grid grid-cols-2 gap-3 mb-6">
                   {statItems.map(s => (
-                    <div key={s.label} className="bg-white/5 rounded-2xl p-3 text-center">
+                    <div key={s.label} className={`bg-white/5 rounded-2xl p-3 text-center ${s.wide ? 'col-span-2' : ''}`}>
                       <div className="text-lg mb-1">{s.icon}</div>
                       <p className="text-lg font-bold text-white">{s.value}</p>
                       <p className="text-xs text-gray-400">{s.label}</p>
