@@ -8,6 +8,7 @@ function getPlayer(req) {
 }
 
 export default async function handler(req, res) {
+  try {
   const gameId = String(req.query.id)
 
   if (req.method === 'GET') {
@@ -146,4 +147,8 @@ export default async function handler(req, res) {
   }
 
   return res.status(405).json({ error: 'Method not allowed' })
+  } catch (err) {
+    console.error('Game handler error:', err.message, err.stack)
+    return res.status(500).json({ error: 'Internal error', detail: err.message })
+  }
 }

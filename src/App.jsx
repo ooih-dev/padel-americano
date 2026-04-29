@@ -973,11 +973,15 @@ function App() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ initData: tg.initData }),
           })
-            .then(r => r.json())
+            .then(r => {
+              if (!r.ok) console.error('Auth failed:', r.status)
+              return r.json()
+            })
             .then(data => {
+              if (data.error) console.error('Auth error:', data.error, data.detail)
               if (data.player) setAuth({ player: data.player, initData: tg.initData })
             })
-            .catch(() => {})
+            .catch(err => console.error('Auth fetch error:', err))
         }
       }
     } catch {}

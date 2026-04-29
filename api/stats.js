@@ -61,22 +61,27 @@ async function getPlayerStats(playerName) {
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
 
-  if (req.query.list === 'players') {
-    const allGames = await getRows('Games')
-    const allRounds = await getRows('Rounds')
-    const gameIdsWithRounds = new Set(allRounds.map(r => r.game_id))
+  try {
+    if (req.query.list === 'players') {
+      const allGames = await getRows('Games')
+      const allRounds = await getRows('Rounds')
+      const gameIdsWithRounds = new Set(allRounds.map(r => r.game_id))
 
-    const nameSet = new Set()
-    for (const g of allGames) {
-      if (!gameIdsWithRounds.has(g.id)) continue
-      for (const name of parseJSON(g.player_names)) nameSet.add(name)
+      const nameSet = new Set()
+      for (const g of allGames) {
+        if (!gameIdsWithRounds.has(g.id)) continue
+        for (const name of parseJSON(g.player_names)) nameSet.add(name)
+      }
+      return res.status(200).json({ players: [...nameSet].sort() })
     }
-    return res.status(200).json({ players: [...nameSet].sort() })
+
+    const playerName = req.query.player
+    if (!playerName) return res.status(400).json({ error: 'player query param required' })
+
+    const stats = await getPlayerStats(playerName)
+    return res.status(200).json(stats)
+  } catch (err) {
+    console.error('Stats handler error:', err.message, err.stack)
+    return res.status(500).json({ error: 'Internal error', detail: err.message })
   }
-
-  const playerName = req.query.player
-  if (!playerName) return res.status(400).json({ error: 'player query param required' })
-
-  const stats = await getPlayerStats(playerName)
-  return res.status(200).json(stats)
 }

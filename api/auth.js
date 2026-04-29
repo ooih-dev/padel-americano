@@ -8,18 +8,23 @@ export default async function handler(req, res) {
   const tgUser = validateInitData(initData, process.env.BOT_TOKEN)
   if (!tgUser) return res.status(401).json({ error: 'Invalid Telegram auth' })
 
-  const name = [tgUser.firstName, tgUser.lastName].filter(Boolean).join(' ') || 'Player'
-  const players = await getRows('Players')
-  const existing = players.find(p => p.telegram_id === String(tgUser.id))
+  try {
+    const name = [tgUser.firstName, tgUser.lastName].filter(Boolean).join(' ') || 'Player'
+    const players = await getRows('Players')
+    const existing = players.find(p => p.telegram_id === String(tgUser.id))
 
-  if (existing) {
-    await updateRow('Players', existing._rowIndex, {
-      id: existing.id, telegram_id: tgUser.id, name, username: tgUser.username,
-    })
-    return res.status(200).json({ player: { id: parseInt(existing.id), telegram_id: tgUser.id, name, username: tgUser.username } })
+    if (existing) {
+      await updateRow('Players', existing._rowIndex, {
+        id: existing.id, telegram_id: tgUser.id, name, username: tgUser.username,
+      })
+      return res.status(200).json({ player: { id: parseInt(existing.id), telegram_id: tgUser.id, name, username: tgUser.username } })
+    }
+
+    const id = await nextId('Players')
+    await appendRow('Players', { id, telegram_id: tgUser.id, name, username: tgUser.username })
+    return res.status(200).json({ player: { id, telegram_id: tgUser.id, name, username: tgUser.username } })
+  } catch (err) {
+    console.error('Auth handler error:', err.message, err.stack)
+    return res.status(500).json({ error: 'Internal error', detail: err.message })
   }
-
-  const id = await nextId('Players')
-  await appendRow('Players', { id, telegram_id: tgUser.id, name, username: tgUser.username })
-  return res.status(200).json({ player: { id, telegram_id: tgUser.id, name, username: tgUser.username } })
 }
