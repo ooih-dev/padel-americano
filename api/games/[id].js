@@ -1,4 +1,4 @@
-import { getPool } from '../_db.js'
+import { getRows, appendRow, updateRow, deleteRows, nextId, toInt, parseJSON } from '../_sheets.js'
 import { validateInitData } from '../_auth.js'
 
 function getPlayer(req) {
@@ -8,37 +8,45 @@ function getPlayer(req) {
 }
 
 export default async function handler(req, res) {
-  const pool = getPool()
-  const gameId = parseInt(req.query.id)
-
-  if (isNaN(gameId)) return res.status(400).json({ error: 'Invalid game id' })
+  const gameId = String(req.query.id)
 
   if (req.method === 'GET') {
-    const game = await pool.query('SELECT * FROM padel_games WHERE id = $1', [gameId])
-    if (game.rows.length === 0) return res.status(404).json({ error: 'Game not found' })
+    const games = await getRows('Games')
+    const game = games.find(g => g.id === gameId)
+    if (!game) return res.status(404).json({ error: 'Game not found' })
 
-    const rounds = await pool.query(
-      'SELECT * FROM padel_rounds WHERE game_id = $1 ORDER BY round_number', [gameId]
-    )
+    const allRounds = await getRows('Rounds')
+    const allSets = await getRows('Sets')
 
-    for (const round of rounds.rows) {
-      const sets = await pool.query(
-        'SELECT * FROM padel_sets WHERE round_id = $1 ORDER BY set_number', [round.id]
-      )
-      round.sets = sets.rows
-    }
-
-    const scores = await pool.query(
-      `SELECT p.name, gp.total_score FROM padel_game_players gp
-       JOIN padel_players p ON p.id = gp.player_id
-       WHERE gp.game_id = $1 ORDER BY gp.total_score DESC`,
-      [gameId]
-    )
+    const rounds = allRounds
+      .filter(r => r.game_id === gameId)
+      .sort((a, b) => toInt(a.round_number) - toInt(b.round_number))
+      .map(r => ({
+        id: toInt(r.id),
+        game_id: toInt(r.game_id),
+        round_number: toInt(r.round_number),
+        sets: allSets
+          .filter(s => s.round_id === r.id)
+          .sort((a, b) => toInt(a.set_number) - toInt(b.set_number))
+          .map(s => ({
+            id: toInt(s.id),
+            round_id: toInt(s.round_id),
+            set_number: toInt(s.set_number),
+            team1_names: parseJSON(s.team1_names),
+            team2_names: parseJSON(s.team2_names),
+            team1_score: toInt(s.team1_score),
+            team2_score: toInt(s.team2_score),
+          })),
+      }))
 
     return res.status(200).json({
-      game: game.rows[0],
-      rounds: rounds.rows,
-      scores: scores.rows,
+      game: {
+        id: toInt(game.id), created_by: toInt(game.created_by), max_score: toInt(game.max_score),
+        player_names: parseJSON(game.player_names), status: game.status,
+        created_at: game.created_at, finished_at: game.finished_at,
+      },
+      rounds,
+      scores: [],
     })
   }
 
@@ -54,42 +62,29 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'round_number and sets required' })
       }
 
-      const roundRes = await pool.query(
-        'INSERT INTO padel_rounds (game_id, round_number) VALUES ($1, $2) RETURNING id',
-        [gameId, round_number]
-      )
-      const roundId = roundRes.rows[0].id
+      const roundId = await nextId('Rounds')
+      await appendRow('Rounds', { id: roundId, game_id: gameId, round_number })
 
       for (const s of sets) {
-        await pool.query(
-          `INSERT INTO padel_sets (round_id, set_number, team1_names, team2_names, team1_score, team2_score)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [roundId, s.set_number, JSON.stringify(s.team1_names), JSON.stringify(s.team2_names), s.team1_score, s.team2_score]
-        )
+        const setId = await nextId('Sets')
+        await appendRow('Sets', {
+          id: setId, round_id: roundId, set_number: s.set_number,
+          team1_names: JSON.stringify(s.team1_names), team2_names: JSON.stringify(s.team2_names),
+          team1_score: s.team1_score, team2_score: s.team2_score,
+        })
       }
 
       return res.status(200).json({ round_id: roundId })
     }
 
     if (action === 'finish') {
-      const { final_scores } = req.body
-      await pool.query(
-        "UPDATE padel_games SET status = 'finished', finished_at = NOW() WHERE id = $1",
-        [gameId]
-      )
+      const games = await getRows('Games')
+      const game = games.find(g => g.id === gameId)
+      if (!game) return res.status(404).json({ error: 'Game not found' })
 
-      if (final_scores && typeof final_scores === 'object') {
-        const playerRes = await pool.query('SELECT id FROM padel_players WHERE telegram_id = $1', [tgUser.id])
-        if (playerRes.rows.length > 0) {
-          const playerId = playerRes.rows[0].id
-          const totalScore = Object.values(final_scores).reduce((a, b) => a + b, 0) / 4
-          await pool.query(
-            `UPDATE padel_game_players SET total_score = $1 WHERE game_id = $2 AND player_id = $3`,
-            [Math.round(totalScore), gameId, playerId]
-          )
-        }
-      }
-
+      await updateRow('Games', game._rowIndex, {
+        ...game, status: 'finished', finished_at: new Date().toISOString(),
+      })
       return res.status(200).json({ status: 'finished' })
     }
 
@@ -99,23 +94,19 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'round_number and sets required' })
       }
 
-      const roundRes = await pool.query(
-        'SELECT id FROM padel_rounds WHERE game_id = $1 AND round_number = $2',
-        [gameId, round_number]
-      )
-      if (roundRes.rows.length === 0) {
-        return res.status(404).json({ error: 'Round not found' })
-      }
-      const roundId = roundRes.rows[0].id
+      const allRounds = await getRows('Rounds')
+      const round = allRounds.find(r => r.game_id === gameId && r.round_number === String(round_number))
+      if (!round) return res.status(404).json({ error: 'Round not found' })
 
+      const allSets = await getRows('Sets')
       for (const s of sets) {
-        await pool.query(
-          `UPDATE padel_sets SET team1_score = $1, team2_score = $2
-           WHERE round_id = $3 AND set_number = $4`,
-          [s.team1_score, s.team2_score, roundId, s.set_number]
-        )
+        const existing = allSets.find(ss => ss.round_id === round.id && ss.set_number === String(s.set_number))
+        if (existing) {
+          await updateRow('Sets', existing._rowIndex, {
+            ...existing, team1_score: s.team1_score, team2_score: s.team2_score,
+          })
+        }
       }
-
       return res.status(200).json({ updated: true })
     }
 
@@ -126,16 +117,30 @@ export default async function handler(req, res) {
     const tgUser = getPlayer(req)
     if (!tgUser) return res.status(401).json({ error: 'Auth required' })
 
-    const rounds = await pool.query(
-      'SELECT id FROM padel_rounds WHERE game_id = $1', [gameId]
-    )
-    const roundIds = rounds.rows.map(r => r.id)
-    if (roundIds.length > 0) {
-      await pool.query('DELETE FROM padel_sets WHERE round_id = ANY($1)', [roundIds])
-    }
-    await pool.query('DELETE FROM padel_rounds WHERE game_id = $1', [gameId])
-    await pool.query('DELETE FROM padel_game_players WHERE game_id = $1', [gameId])
-    await pool.query('DELETE FROM padel_games WHERE id = $1', [gameId])
+    const allRounds = await getRows('Rounds')
+    const allSets = await getRows('Sets')
+    const allGP = await getRows('GamePlayers')
+    const games = await getRows('Games')
+
+    const roundRows = allRounds.filter(r => r.game_id === gameId)
+    const roundIds = new Set(roundRows.map(r => r.id))
+    const setRows = allSets.filter(s => roundIds.has(s.round_id))
+    const gpRows = allGP.filter(gp => gp.game_id === gameId)
+    const gameRow = games.find(g => g.id === gameId)
+
+    await deleteRows('Sets', setRows.map(s => s._rowIndex))
+
+    const freshRounds = await getRows('Rounds')
+    const freshRoundRows = freshRounds.filter(r => r.game_id === gameId)
+    await deleteRows('Rounds', freshRoundRows.map(r => r._rowIndex))
+
+    const freshGP = await getRows('GamePlayers')
+    const freshGPRows = freshGP.filter(gp => gp.game_id === gameId)
+    await deleteRows('GamePlayers', freshGPRows.map(gp => gp._rowIndex))
+
+    const freshGames = await getRows('Games')
+    const freshGame = freshGames.find(g => g.id === gameId)
+    if (freshGame) await deleteRows('Games', [freshGame._rowIndex])
 
     return res.status(200).json({ deleted: true })
   }
