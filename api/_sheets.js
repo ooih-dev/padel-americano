@@ -91,6 +91,12 @@ export function parseJSON(val) {
   try { return JSON.parse(val) } catch { return [] }
 }
 
+export function toJSON(val) {
+  return JSON.stringify(val).replace(/\\u[\da-fA-F]{4}/g, m =>
+    String.fromCharCode(parseInt(m.slice(2), 16))
+  )
+}
+
 export function toInt(val) {
   return parseInt(val) || 0
 }

@@ -1,4 +1,4 @@
-import { getRows, appendRow, updateRow, deleteRows, nextId, toInt, parseJSON } from '../_sheets.js'
+import { getRows, appendRow, updateRow, deleteRows, nextId, toInt, parseJSON, toJSON } from '../_sheets.js'
 import { validateInitData } from '../_auth.js'
 
 function getPlayer(req) {
@@ -70,7 +70,7 @@ export default async function handler(req, res) {
         const setId = await nextId('Sets')
         await appendRow('Sets', {
           id: setId, round_id: roundId, set_number: s.set_number,
-          team1_names: JSON.stringify(s.team1_names), team2_names: JSON.stringify(s.team2_names),
+          team1_names: toJSON(s.team1_names), team2_names: toJSON(s.team2_names),
           team1_score: s.team1_score, team2_score: s.team2_score,
         })
       }

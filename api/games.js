@@ -1,4 +1,4 @@
-import { getRows, appendRow, nextId, toInt, parseJSON } from './_sheets.js'
+import { getRows, appendRow, nextId, toInt, parseJSON, toJSON } from './_sheets.js'
 import { validateInitData } from './_auth.js'
 
 function getPlayer(req) {
@@ -60,7 +60,7 @@ export default async function handler(req, res) {
       const now = new Date().toISOString()
       const game = {
         id: gameId, created_by: player.id, max_score,
-        player_names: JSON.stringify(player_names), status: 'active', created_at: now, finished_at: '',
+        player_names: toJSON(player_names), status: 'active', created_at: now, finished_at: '',
       }
       await appendRow('Games', game)
       await appendRow('GamePlayers', { game_id: gameId, player_id: player.id, total_score: 0 })
