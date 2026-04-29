@@ -38,7 +38,7 @@ export async function appendRow(sheet, data) {
     spreadsheetId: SPREADSHEET_ID,
     range: `${sheet}!A:Z`,
     valueInputOption: 'RAW',
-    body: { values: [row] },
+    requestBody: { values: [row] },
   })
 }
 
@@ -49,7 +49,7 @@ export async function updateRow(sheet, rowIndex, data) {
     spreadsheetId: SPREADSHEET_ID,
     range: `${sheet}!A${rowIndex}`,
     valueInputOption: 'RAW',
-    body: { values: [row] },
+    requestBody: { values: [row] },
   })
 }
 
@@ -67,7 +67,7 @@ export async function deleteRows(sheet, rowIndices) {
   }))
   await getSheets().spreadsheets.batchUpdate({
     spreadsheetId: SPREADSHEET_ID,
-    body: { requests },
+    requestBody: { requests },
   })
 }
 
