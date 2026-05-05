@@ -331,6 +331,12 @@ function GameScreen({ players, maxScore, scores, onFinish, roundNum, onNewRound,
             Сет {Math.min(completedSets.length + 1, 3)}/3 · до {maxScore} очков
           </span>
         </div>
+        {!gameId && auth?.initData && (
+          <p className="text-xs text-yellow-400 mb-3">⏳ Сохранение игры...</p>
+        )}
+        {!gameId && !auth?.initData && (
+          <p className="text-xs text-red-400 mb-3">⚠️ Игра не сохраняется — откройте через Telegram</p>
+        )}
 
         <div className="bg-white/5 rounded-2xl p-4 mb-5">
           <h2 className="text-xs text-gray-400 uppercase tracking-wider mb-3">Таблица</h2>
@@ -1013,14 +1019,15 @@ function App() {
     setScreen('game')
 
     if (auth.initData) {
-      fetch('/api/games', {
+      const createGame = () => fetch('/api/games', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-telegram-init-data': auth.initData },
         body: JSON.stringify({ max_score: max, player_names: names }),
       })
         .then(r => r.json())
-        .then(data => { if (data.game?.id) setGameId(data.game.id) })
-        .catch(() => {})
+        .then(data => { if (data.game?.id) setGameId(data.game.id); else throw new Error(data.error || 'no game id') })
+        .catch(err => { console.error('Game create failed:', err.message); setTimeout(createGame, 3000) })
+      createGame()
     }
   }, [auth])
 
